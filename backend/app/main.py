@@ -9,11 +9,11 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import sesiones
+from . import sesiones, voz
 from .cerebro import procesar
 from .config import RAIZ, config
 from .notion import notion
@@ -102,7 +102,32 @@ async def estado(x_clave: str = Header(default="")) -> dict:
         return base
     return {**base, "autorizado": True, "cerebro": config.orquestador_efectivo,
             "investigacion": config.investigacion_modo if config.gemini_api_key else "no configurada",
-            "web_gratis": bool(config.tavily_api_key), "notion": notion.configurado}
+            "web_gratis": bool(config.tavily_api_key), "notion": notion.configurado,
+            "voz": {"motor": "gemini" if voz.disponible() else "navegador",
+                    "predeterminada": config.voz_gemini,
+                    "voces": [{"nombre": n, "caracter": c} for n, c in voz.VOCES.items()]
+                    + ([] if config.voz_gemini in voz.VOCES else
+                       [{"nombre": config.voz_gemini, "caracter": "voz diseñada"}])}}
+
+
+class PeticionVoz(BaseModel):
+    texto: str = Field(min_length=1, max_length=1500)
+    voz: str | None = Field(default=None, max_length=80)
+
+
+@app.post("/api/voz", dependencies=[Depends(verificar_clave)])
+async def hablar(datos: PeticionVoz) -> Response:
+    """Convierte texto en audio con la voz de Gemini. Si falla, la página usa la voz del navegador."""
+    if not voz.disponible():
+        raise HTTPException(503, "La voz de Gemini no está activada (VOZ_MOTOR o GEMINI_API_KEY).")
+    inicio = time.monotonic()
+    try:
+        audio = await voz.sintetizar(datos.texto, datos.voz)
+    except Exception as error:  # noqa: BLE001
+        log.warning("No se pudo generar la voz: %s", str(error)[:200])
+        raise HTTPException(503, f"No se pudo generar la voz: {str(error)[:160]}") from error
+    log.info("Voz generada en %.1f s (%s)", time.monotonic() - inicio, voz.voz_permitida(datos.voz))
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/salud")

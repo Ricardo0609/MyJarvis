@@ -1,4 +1,5 @@
-import { api, clave, ErrorClave } from "./api.js";
+import { api, clave, ErrorClave, preferenciaVoz } from "./api.js";
+import { desbloquearAudio } from "./audio.js";
 import { crearOrbe } from "./orbe.js";
 import { mostrarEnPanel, ocultarPanel } from "./panel.js";
 import { escucha, voz } from "./voz.js";
@@ -10,10 +11,13 @@ const formTeclado = $("form-teclado");
 const entradaTexto = $("entrada-texto");
 const dialogoClave = $("dialogo-clave");
 const aviso = $("aviso");
+const selectorVoz = $("selector-voz");
 
 const orbe = crearOrbe({ alTocar: () => alTocarMicrofono() }); // tocar el Núcleo Lumen = hablar
 let ocupado = false;
 let temporizadorAviso;
+let vozGeminiDisponible = false;
+let avisoVozMostrado = false;
 
 const ESTADOS = {
   reposo: "Toca el núcleo para hablar",
@@ -49,6 +53,45 @@ function cerrarPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Voz: Gemini (la que elijas en el selector) o la del navegador de respaldo
+// ---------------------------------------------------------------------------
+
+function configurarVoz() {
+  const elegida = preferenciaVoz.obtener();
+  voz.motorRemoto = vozGeminiDisponible && elegida !== "navegador"
+    ? (texto) => api.voz(texto, elegida || null)
+    : null;
+}
+
+// Habla y mueve el núcleo: se queda "pensando" mientras se genera el audio y pasa a "hablando" al sonar.
+async function decir(texto) {
+  const sono = await voz.hablar(texto, {
+    alNivel: (n) => orbe.nivel(n),
+    alEmpezar: () => ponerEstado("hablando"),
+  });
+  if (voz.motorRemoto && voz.ultimoMotor === "navegador" && !avisoVozMostrado) {
+    avisoVozMostrado = true;
+    mostrarAviso(`La voz de Gemini no respondió (${voz.ultimoError}); usé la del navegador.`, 9000);
+  }
+  return sono;
+}
+
+function llenarSelectorVoz(infoVoz) {
+  selectorVoz.replaceChildren();
+  const elegida = preferenciaVoz.obtener();
+  if (infoVoz?.motor === "gemini") {
+    for (const { nombre, caracter } of infoVoz.voces) {
+      const opcion = new Option(`${nombre} · ${caracter}${nombre === infoVoz.predeterminada ? " (predeterminada)" : ""}`, nombre);
+      selectorVoz.append(opcion);
+    }
+  }
+  selectorVoz.append(new Option("Voz del navegador", "navegador"));
+  const valores = [...selectorVoz.options].map((o) => o.value);
+  selectorVoz.value = valores.includes(elegida) ? elegida : (infoVoz?.motor === "gemini" ? infoVoz.predeterminada : "navegador");
+  selectorVoz.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
 // Flujo principal: escuchar → pensar → hablar (y mostrar si hace falta)
 // ---------------------------------------------------------------------------
 
@@ -78,11 +121,11 @@ async function enviar(texto) {
       cerrarPanel();
     }
 
-    ponerEstado("hablando");
+    ponerEstado("pensando", "");
     transcripcion.textContent = respuesta.voz; // la respuesta queda escrita como subtítulo
-    const seEscucho = await voz.hablar(respuesta.voz, { alNivel: (n) => orbe.nivel(n) });
+    const sono = await decir(respuesta.voz);
     ponerEstado("reposo");
-    if (!seEscucho) mostrarAviso("No se reprodujo la voz. Toca “Probar voz” arriba para revisar el audio.", 9000);
+    if (!sono) mostrarAviso("No se reprodujo la voz. Toca “Probar voz” arriba para revisar el audio.", 9000);
   } catch (error) {
     limpiarEsperas();
     if (error instanceof ErrorClave) {
@@ -170,28 +213,32 @@ $("btn-nueva").addEventListener("click", async () => {
   }
 });
 
-// TEMPORAL: prueba de audio y diagnóstico rápido (se quitará cuando todo funcione)
-$("btn-prueba").addEventListener("click", async () => {
-  if (!voz.soportada) {
-    mostrarAviso("Este navegador no puede hablar (no tiene síntesis de voz). Prueba con Chrome.", 9000);
-    return;
-  }
-  // Se habla directo dentro del toque (sin desbloquear ni cancelar antes): así lo exige el iPhone.
+// TEMPORAL: prueba de voz, selector de voces y diagnóstico rápido
+async function probarVoz() {
+  // El audio se habilita aquí mismo, dentro del toque (lo exige el celular).
+  desbloquearAudio();
+  voz.callar();
   const saludo = "Hola, bienvenido de nuevo.";
-  const hablando = voz.hablar(saludo, { alNivel: (n) => orbe.nivel(n) });
-  ponerEstado("hablando");
+  ponerEstado("pensando", "");
   transcripcion.textContent = saludo;
-  const seEscucho = await hablando;
+  const sono = await decir(saludo);
   ponerEstado("reposo");
 
   const estado = await api.estado().catch(() => null);
   const servidor = !estado
     ? "Servidor: sin conexión"
     : `Cerebro: ${estado.cerebro || "?"} · Notion: ${estado.notion ? "conectado" : "sin conectar"} · Web: ${estado.web_gratis ? "Tavily" : "sin búsqueda web"}`;
-  mostrarAviso(
-    `${seEscucho ? "✓ Voz funcionando" : "✗ El navegador no reprodujo la voz: revisa el volumen y la salida de audio"} · Voz: ${voz.nombre()} · ${servidor}`,
-    12000,
-  );
+  const queVoz = voz.ultimoMotor === "gemini"
+    ? `Voz: Gemini (${selectorVoz.value})`
+    : `Voz: navegador (${voz.nombre()})${voz.ultimoError ? ` — Gemini: ${voz.ultimoError}` : ""}`;
+  mostrarAviso(`${sono ? "✓ Voz funcionando" : "✗ No se reprodujo la voz: revisa el volumen y la salida de audio"} · ${queVoz} · ${servidor}`, 12000);
+}
+
+$("btn-prueba").addEventListener("click", probarVoz);
+selectorVoz.addEventListener("change", () => {
+  preferenciaVoz.guardar(selectorVoz.value);
+  configurarVoz();
+  probarVoz();
 });
 
 $("btn-microfono").addEventListener("click", alTocarMicrofono);
@@ -199,7 +246,7 @@ $("orbe").addEventListener("click", alTocarMicrofono);
 $("panel-cerrar").addEventListener("click", cerrarPanel);
 
 document.addEventListener("keydown", (evento) => {
-  const escribiendo = evento.target.closest("input, textarea, dialog");
+  const escribiendo = evento.target.closest("input, textarea, select, dialog");
   if (evento.code === "Space" && !escribiendo && !evento.repeat) {
     evento.preventDefault();
     alTocarMicrofono();
@@ -213,13 +260,20 @@ function pedirClave(error = "") {
   if (!dialogoClave.open) dialogoClave.showModal();
 }
 
+function aplicarEstado(estado) {
+  $("conexion").textContent = estado.cerebro === "gemini" ? "Gemini" : estado.cerebro === "claude" ? "Claude" : "";
+  vozGeminiDisponible = estado.voz?.motor === "gemini";
+  llenarSelectorVoz(estado.voz);
+  configurarVoz();
+}
+
 $("form-clave").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   clave.guardar($("entrada-clave").value.trim());
   const estado = await api.estado().catch(() => null);
   if (estado && estado.autorizado) {
     dialogoClave.close();
-    $("conexion").textContent = estado.cerebro === "gemini" ? "Gemini" : "Claude";
+    aplicarEstado(estado);
   } else {
     $("error-clave").textContent = estado ? "Esa clave no coincide con APP_CLAVE." : "No pude conectar con el servidor.";
   }
@@ -238,7 +292,7 @@ async function iniciar() {
       pedirClave(clave.obtener() ? "La clave guardada ya no es válida." : "");
       return;
     }
-    $("conexion").textContent = estado.cerebro === "gemini" ? "Gemini" : estado.cerebro === "claude" ? "Claude" : "";
+    aplicarEstado(estado);
     if (estado.cerebro === "ninguno") mostrarAviso("Falta configurar la llave de Claude o de Gemini en el servidor.", 8000);
   } catch {
     ponerEstado("error", "Sin conexión con el servidor");

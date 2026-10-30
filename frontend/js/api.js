@@ -52,7 +52,38 @@ async function pedir(ruta, { metodo = "GET", cuerpo, tiempoMax = 90000 } = {}) {
   }
 }
 
+// Pide a Gemini el audio de una frase (WAV). Lanza error si no se pudo generar.
+async function pedirAudio(texto, nombreVoz) {
+  const control = new AbortController();
+  const temporizador = setTimeout(() => control.abort(), 25000);
+  try {
+    const respuesta = await fetch("/api/voz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Clave": claveEnMemoria },
+      body: JSON.stringify({ texto, voz: nombreVoz || null }),
+      signal: control.signal,
+    });
+    if (respuesta.status === 401) throw new ErrorClave("Clave incorrecta");
+    if (!respuesta.ok) {
+      const datos = await respuesta.json().catch(() => ({}));
+      throw new ErrorServidor(datos.detail || `Error ${respuesta.status} al generar la voz`);
+    }
+    return await respuesta.arrayBuffer();
+  } catch (error) {
+    if (error.name === "AbortError") throw new ErrorServidor("La voz tardó demasiado en generarse");
+    throw error;
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
+export const preferenciaVoz = {
+  obtener: () => leer("jarvis.voz"),
+  guardar: (valor) => guardar("jarvis.voz", valor),
+};
+
 export const api = {
+  voz: pedirAudio,
   estado: () => pedir("/api/estado", { tiempoMax: 70000 }),
   comando: (texto) => pedir("/api/comando", { metodo: "POST", cuerpo: { texto, sesion: sesionId() } }),
   olvidar: () => pedir("/api/olvidar", { metodo: "POST", cuerpo: { sesion: sesionId() } }),

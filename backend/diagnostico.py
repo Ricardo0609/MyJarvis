@@ -99,6 +99,18 @@ async def probar_gemini():
         traceback.print_exc()
 
 
+async def probar_voz():
+    from app import voz
+    if not voz.disponible():
+        print(f"[ --  ] Voz de Gemini: desactivada (VOZ_MOTOR={config.voz_motor}); se usa la del navegador")
+        return
+    try:
+        audio = await voz.sintetizar("Hola, bienvenido de nuevo.")
+        mostrar(f"Voz de Gemini ({config.voz_gemini})", len(audio) > 1000, f"{len(audio) // 1024} KB de audio generados")
+    except Exception as error:  # noqa: BLE001
+        mostrar(f"Voz de Gemini ({config.voz_gemini})", False, error_corto(error))
+
+
 async def probar_tavily():
     if not config.tavily_api_key:
         mostrar("Tavily (búsqueda web)", False, "TAVILY_API_KEY está vacía en el .env")
@@ -154,6 +166,7 @@ async def main():
     print(f"NOTION_TOKEN: {llave(config.notion_token)}")
     print("=" * 60)
     await probar_gemini()
+    await probar_voz()
     await probar_tavily()
     await probar_claude()
     await probar_notion()

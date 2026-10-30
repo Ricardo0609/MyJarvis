@@ -27,7 +27,7 @@ export function crearLumen(canvas, { objetivo, alTocar } = {}) {
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
   renderer.setPixelRatio(pixelRatio);
-  renderer.setClearColor(0x0a0306, 1);
+  renderer.setClearColor(0x0b0602, 1);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
@@ -36,11 +36,11 @@ export function crearLumen(canvas, { objetivo, alTocar } = {}) {
   scene.add(root);
 
   const COL = {
-    primary: new THREE.Color("#ff3355"),
-    glint: new THREE.Color("#ff9ab8"),
-    white: new THREE.Color("#fff0f4"),
-    magenta: new THREE.Color("#c86bff"),
-    deep: new THREE.Color("#c41c45"),
+    primary: new THREE.Color("#ff8a1f"),
+    glint: new THREE.Color("#ffc46b"),
+    white: new THREE.Color("#fff4e0"),
+    gold: new THREE.Color("#ffe27a"),
+    deep: new THREE.Color("#c4520f"),
   };
 
   // Uniformes compartidos por los shaders del orbe
@@ -397,7 +397,7 @@ export function crearLumen(canvas, { objetivo, alTocar } = {}) {
     idle:   { speed: 0.55, energy: 0.35, amp: 0.07, talk: 0.0, sweep: 0.0,  flash: 0.25, ring: 0.6, core: 0.9,  colB: COL.glint },
     listen: { speed: 0.85, energy: 0.6,  amp: 0.2,  talk: 0.4, sweep: 0.0,  flash: 0.45, ring: 0.9, core: 1.05, colB: COL.glint },
     speak:  { speed: 1.1,  energy: 1.0,  amp: 0.44, talk: 1.0, sweep: 0.0,  flash: 0.6,  ring: 1.2, core: 1.45, colB: COL.white },
-    think:  { speed: 1.9,  energy: 0.75, amp: 0.1,  talk: 0.0, sweep: 0.32, flash: 1.0,  ring: 3.2, core: 1.15, colB: COL.magenta },
+    think:  { speed: 1.9,  energy: 0.75, amp: 0.1,  talk: 0.0, sweep: 0.32, flash: 1.0,  ring: 3.2, core: 1.15, colB: COL.gold },
   };
   const cur = Object.assign({}, MODES.idle);
   let target = MODES.idle;

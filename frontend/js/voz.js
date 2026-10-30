@@ -1,4 +1,6 @@
-// Voz gratis del navegador: escuchar (reconocimiento) y hablar (síntesis).
+// Voz: escuchar (reconocimiento del navegador) y hablar (voz de Gemini, con la del navegador de respaldo).
+
+import { desbloquearAudio, detenerAudio, reproducirAudio } from "./audio.js";
 
 const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -84,9 +86,13 @@ function trocear(texto, maximo = 180) {
 }
 
 export const voz = {
-  soportada: "speechSynthesis" in window,
+  soportada: "speechSynthesis" in window, // voz del navegador (respaldo)
   _voz: null,
   _hablando: false,
+  // Voz de Gemini: la app conecta aquí una función async (texto) => ArrayBuffer con el audio.
+  motorRemoto: null,
+  ultimoMotor: "",
+  ultimoError: "",
 
   elegir() {
     if (!this.soportada) return null;
@@ -101,6 +107,7 @@ export const voz = {
   // iPhone y algunos Android solo dejan hablar si la PRIMERA frase se pide directo dentro de un toque.
   // Se llama al tocar el micrófono, el núcleo o el teclado, para que la respuesta (que llega después) sí suene.
   desbloquear() {
+    desbloquearAudio();
     if (!this.soportada || this._desbloqueada) return;
     const silencio = new SpeechSynthesisUtterance(" ");
     silencio.volume = 0;
@@ -111,9 +118,30 @@ export const voz = {
   },
 
   callar() {
-    if (!this.soportada) return;
+    detenerAudio();
     this._hablando = false;
-    speechSynthesis.cancel();
+    if (this.soportada) speechSynthesis.cancel();
+  },
+
+  // Habla con la voz de Gemini; si no está disponible o falla, usa la voz del navegador.
+  // Devuelve true si algo sonó.
+  async hablar(texto, opciones = {}) {
+    if (!texto) return false;
+    this.ultimoError = "";
+    if (this.motorRemoto) {
+      try {
+        const audio = await this.motorRemoto(texto);
+        if (audio && await reproducirAudio(audio, opciones)) {
+          this.ultimoMotor = "gemini";
+          return true;
+        }
+        this.ultimoError = "el navegador no dejó reproducir el audio";
+      } catch (error) {
+        this.ultimoError = error.message || "falló la voz de Gemini";
+      }
+    }
+    this.ultimoMotor = "navegador";
+    return this.hablarNavegador(texto, opciones);
   },
 
   nombre() {
@@ -123,8 +151,8 @@ export const voz = {
     return this._voz ? `${this._voz.name} (${this._voz.lang})` : `predeterminada del sistema, ${total} voces instaladas`;
   },
 
-  // Devuelve true si el navegador realmente empezó a hablar.
-  hablar(texto, { alNivel } = {}) {
+  // Voz del navegador. Devuelve true si realmente empezó a hablar.
+  hablarNavegador(texto, { alNivel, alEmpezar } = {}) {
     return new Promise((resolver) => {
       if (!this.soportada || !texto) return resolver(false);
       // Chrome a veces "pierde" la frase si se habla justo después de cancel(): esperamos un momento.
@@ -170,7 +198,10 @@ export const voz = {
         frase.rate = 1.03;
         frase.pitch = 0.95;
         frase.volume = 1;
-        frase.onstart = () => { seEscucho = true; };
+        frase.onstart = () => {
+          if (!seEscucho) alEmpezar?.();
+          seEscucho = true;
+        };
         frase.onboundary = () => { seEscucho = true; pulso = 1; };
         let avanzado = false;
         const avanzar = () => {

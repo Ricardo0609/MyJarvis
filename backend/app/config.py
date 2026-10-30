@@ -46,6 +46,13 @@ class Config:
     modelo_gemini_orquestador: str
     modelos_gemini_respaldo: tuple[str, ...]
 
+    # Voz (texto a voz)
+    voz_motor: str  # "gemini" | "navegador"
+    modelo_tts: str
+    modelos_tts_respaldo: tuple[str, ...]
+    voz_gemini: str
+    voz_estilo: str
+
     # Investigación
     investigacion_modo: str  # "gratis" | "google"
     tavily_api_key: str
@@ -83,6 +90,12 @@ def cargar_config() -> Config:
         modelos_gemini_respaldo=tuple(m.strip() for m in _env(
             "MODELOS_GEMINI_RESPALDO", "gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",")
             if m.strip()),
+        voz_motor=_env("VOZ_MOTOR", "gemini").lower(),
+        modelo_tts=_env("MODELO_TTS", "gemini-3.8-flash-tts"),
+        modelos_tts_respaldo=tuple(m.strip() for m in _env(
+            "MODELOS_TTS_RESPALDO", "gemini-3.8-flash-lite-tts").split(",") if m.strip()),
+        voz_gemini=_env("VOZ_GEMINI", "Charon"),
+        voz_estilo=_env("VOZ_ESTILO", "sereno, elegante y preciso, como un mayordomo refinado"),
         investigacion_modo=_env("INVESTIGACION_MODO", "gratis").lower(),
         tavily_api_key=_env("TAVILY_API_KEY"),
         notion_token=_env("NOTION_TOKEN"),

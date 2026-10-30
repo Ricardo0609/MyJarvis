@@ -194,3 +194,29 @@ def test_error_de_datos_no_cambia_de_modelo(monkeypatch):
     monkeypatch.setattr(research, "_cliente_gemini", NS(aio=NS(models=Modelos())))
     with pytest.raises(RuntimeError, match="INVALID_ARGUMENT"):
         asyncio.run(research.generar_gemini_con_modelo("gemini-3.8-flash", "hola"))
+
+
+def test_api_voz_devuelve_audio_y_respaldo(monkeypatch):
+    import app.main as main
+    from app import voz
+
+    async def sintetizar_falso(texto, nombre=None):
+        return b"RIFF....WAVEfmt " + texto.encode()
+
+    monkeypatch.setattr(voz, "sintetizar", sintetizar_falso)
+    with TestClient(app) as cliente:
+        sin_clave = cliente.post("/api/voz", json={"texto": "hola"})
+        r = cliente.post("/api/voz", json={"texto": "hola", "voz": "Iapetus"}, headers={"X-Clave": "secreto"})
+        estado = cliente.get("/api/estado", headers={"X-Clave": "secreto"}).json()
+    assert sin_clave.status_code == 401
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content.endswith(b"hola")
+    assert estado["voz"]["motor"] == "gemini" and estado["voz"]["predeterminada"] == "Charon"
+    assert any(v["nombre"] == "Iapetus" for v in estado["voz"]["voces"])
+
+    async def sintetizar_roto(texto, nombre=None):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    monkeypatch.setattr(voz, "sintetizar", sintetizar_roto)
+    with TestClient(app) as cliente:
+        r = cliente.post("/api/voz", json={"texto": "hola"}, headers={"X-Clave": "secreto"})
+    assert r.status_code == 503 and "RESOURCE_EXHAUSTED" in r.json()["detail"]
