@@ -7,13 +7,23 @@ const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognitio
 export const escucha = {
   soportada: Boolean(Reconocimiento),
   activa: false,
+  ultimoError: "",
   _rec: null,
+  _vigilante: null,
 
   iniciar({ alParcial, alTerminar, alError } = {}) {
     if (!Reconocimiento) {
       alError?.("no-soportado");
       return;
     }
+    // Si quedó un reconocimiento anterior abierto, se cierra antes de abrir otro.
+    if (this._rec) {
+      try { this._rec.abort(); } catch { /* ya estaba cerrado */ }
+      this._rec = null;
+    }
+    // Que no esté sonando nada mientras se abre el micrófono.
+    detenerAudio();
+
     const rec = new Reconocimiento();
     rec.lang = "es-MX";
     rec.interimResults = true;
@@ -21,6 +31,18 @@ export const escucha = {
     rec.maxAlternatives = 1;
     let textoFinal = "";
     let ultimoParcial = "";
+    let terminado = false;
+    this.ultimoError = "";
+
+    const terminar = () => {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(this._vigilante);
+      this.activa = false;
+      if (this._rec === rec) this._rec = null;
+      // Algunos navegadores cortan antes de marcar el último resultado como final.
+      alTerminar?.((textoFinal || ultimoParcial).trim());
+    };
 
     rec.onresult = (evento) => {
       let parcial = "";
@@ -33,27 +55,32 @@ export const escucha = {
       alParcial?.((textoFinal + " " + parcial).trim());
     };
     rec.onerror = (evento) => {
+      this.ultimoError = evento.error || "desconocido";
       if (evento.error !== "no-speech" && evento.error !== "aborted") alError?.(evento.error);
     };
-    rec.onend = () => {
-      this.activa = false;
-      this._rec = null;
-      // Algunos navegadores cortan antes de marcar el último resultado como final.
-      alTerminar?.((textoFinal || ultimoParcial).trim());
-    };
+    rec.onend = terminar;
 
     this._rec = rec;
     this.activa = true;
+    // Respaldo: si en 15 s el navegador no cierra el micrófono, lo cerramos nosotros.
+    this._vigilante = setTimeout(() => {
+      try { rec.stop(); } catch { /* nada */ }
+      setTimeout(terminar, 1500);
+    }, 15000);
     try {
       rec.start();
-    } catch {
+    } catch (error) {
+      this.ultimoError = error.name || "no se pudo iniciar";
+      terminado = true;
+      clearTimeout(this._vigilante);
       this.activa = false;
+      this._rec = null;
       alError?.("ocupado");
     }
   },
 
   detener() {
-    this._rec?.stop();
+    try { this._rec?.stop(); } catch { /* ya estaba cerrado */ }
   },
 };
 

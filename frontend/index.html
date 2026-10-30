@@ -31,10 +31,6 @@
       </div>
       <div class="barra__derecha">
         <span class="conexion" id="conexion" aria-live="polite"></span>
-        <!-- TEMPORAL: botón para probar que la voz se escucha -->
-        <button class="prueba" id="btn-prueba" type="button">
-          <span class="material-symbols-rounded" aria-hidden="true">volume_up</span>Probar voz
-        </button>
       </div>
     </header>
 
@@ -88,6 +84,11 @@
       <button class="boton" type="submit">Entrar</button>
     </form>
   </dialog>
+
+  <!-- Aparece solo si el navegador pide un toque antes de dejar sonar el saludo -->
+  <button class="activar" id="activar-audio" type="button" hidden>
+    <span class="activar__texto">Toca para activar a JARVIS</span>
+  </button>
 
   <div class="aviso" id="aviso" role="status" hidden></div>
 

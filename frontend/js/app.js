@@ -1,5 +1,5 @@
 import { api, clave, ErrorClave } from "./api.js";
-import { desbloquearAudio } from "./audio.js";
+import { desbloquearAudio, reproducirAudio } from "./audio.js";
 import { crearOrbe } from "./orbe.js";
 import { mostrarEnPanel, ocultarPanel } from "./panel.js";
 import { escucha, voz } from "./voz.js";
@@ -130,8 +130,13 @@ function escuchar() {
   escucha.iniciar({
     alParcial: (texto) => { transcripcion.textContent = texto; },
     alTerminar: (texto) => {
-      if (texto) enviar(texto);
-      else if (!ocupado) ponerEstado("reposo");
+      if (texto) return enviar(texto);
+      if (ocupado) return;
+      // No se captó nada: lo decimos en lugar de quedarnos callados.
+      const motivo = { "no-speech": "no escuché nada", "aborted": "el micrófono se cerró", "audio-capture": "no hay acceso al micrófono", "network": "falló la conexión del dictado" }[escucha.ultimoError];
+      ponerEstado("reposo", "No te escuché. Toca el núcleo e inténtalo de nuevo");
+      if (escucha.ultimoError) mostrarAviso(`No te escuché (${motivo || escucha.ultimoError}).`, 6000);
+      setTimeout(() => { if (document.body.dataset.estado === "reposo") ponerEstado("reposo"); }, 4000);
     },
     alError: (codigo) => {
       const mensajes = {
@@ -191,26 +196,44 @@ $("btn-nueva").addEventListener("click", async () => {
   }
 });
 
-// TEMPORAL: prueba de voz y diagnóstico rápido
-async function probarVoz() {
-  // El audio se habilita aquí mismo, dentro del toque (lo exige el celular).
-  desbloquearAudio();
-  voz.callar();
-  const saludo = "Hola, bienvenido de nuevo.";
-  ponerEstado("pensando", vozGeminiDisponible ? "Preparando la voz…" : "");
-  transcripcion.textContent = saludo;
-  const sono = await decir(saludo);
-  ponerEstado("reposo");
+// ---------------------------------------------------------------------------
+// Saludo al entrar: también confirma que el audio funciona
+// ---------------------------------------------------------------------------
 
-  const estado = await api.estado().catch(() => null);
-  const servidor = !estado
-    ? "Servidor: sin conexión"
-    : `Cerebro: ${estado.cerebro || "?"} · Notion: ${estado.notion ? "conectado" : "sin conectar"} · Web: ${estado.web_gratis ? "Tavily" : "sin búsqueda web"}`;
-  const queVoz = voz.ultimoMotor === "gemini" ? "Voz: Charon" : voz.ultimoMotor === "navegador" ? `Voz: navegador (${voz.nombre()})` : "Voz: no sonó";
-  if (sono) mostrarAviso(`✓ Voz funcionando · ${queVoz} · ${servidor}`, 12000);
+const SALUDO = "Bienvenido de nuevo, señor.";
+const activacion = $("activar-audio");
+
+async function saludar() {
+  if (!vozGeminiDisponible) return;
+  ponerEstado("pensando", "Preparando la voz…");
+  let audio;
+  try {
+    audio = await api.voz(SALUDO);
+  } catch (error) {
+    ponerEstado("reposo");
+    mostrarAviso(`No sonó la voz de Charon: ${error.message}.`, 9000);
+    return;
+  }
+  transcripcion.textContent = SALUDO;
+  const reproducir = async () => {
+    const sono = await reproducirAudio(audio, {
+      alNivel: (n) => orbe.nivel(n),
+      alEmpezar: () => ponerEstado("hablando"),
+    });
+    ponerEstado("reposo");
+    return sono;
+  };
+  if (await reproducir()) return;
+
+  // El navegador no deja sonar audio hasta que toques la pantalla una vez (regla de Chrome y Safari).
+  ponerEstado("reposo", "");
+  activacion.hidden = false;
+  activacion.addEventListener("click", () => {
+    activacion.hidden = true;
+    desbloquearAudio();
+    reproducir(); // se reproduce dentro del toque: así el celular sí lo permite
+  }, { once: true });
 }
-
-$("btn-prueba").addEventListener("click", probarVoz);
 
 $("btn-microfono").addEventListener("click", alTocarMicrofono);
 $("orbe").addEventListener("click", alTocarMicrofono);
@@ -244,6 +267,7 @@ $("form-clave").addEventListener("submit", async (evento) => {
   if (estado && estado.autorizado) {
     dialogoClave.close();
     aplicarEstado(estado);
+    saludar();
   } else {
     $("error-clave").textContent = estado ? "Esa clave no coincide con APP_CLAVE." : "No pude conectar con el servidor.";
   }
@@ -263,6 +287,7 @@ async function iniciar() {
       return;
     }
     aplicarEstado(estado);
+    saludar();
     if (estado.cerebro === "ninguno") mostrarAviso("Falta configurar la llave de Claude o de Gemini en el servidor.", 8000);
   } catch {
     ponerEstado("error", "Sin conexión con el servidor");

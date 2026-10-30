@@ -58,14 +58,20 @@ function prepararEfecto() {
   }
 }
 
-// Llamar SIEMPRE dentro de un toque (micrófono, núcleo, teclado, probar voz).
+let desbloqueado = false;
+
+export function audioDesbloqueado() {
+  return desbloqueado;
+}
+
+// Llamar dentro de un toque. Solo hace falta UNA vez: después ya no se reproduce el silencio,
+// porque sonar algo justo cuando se abre el micrófono hace que algunos celulares no escuchen.
 export function desbloquearAudio() {
   prepararEfecto();
   if (contexto && contexto.state === "suspended") contexto.resume().catch(() => {});
-  if (!elemento.src || elemento.src === SILENCIO || elemento.ended || elemento.paused) {
-    elemento.src = SILENCIO;
-    elemento.play().catch(() => {});
-  }
+  if (desbloqueado) return;
+  elemento.src = SILENCIO;
+  elemento.play().then(() => { desbloqueado = true; }).catch(() => {});
 }
 
 export function detenerAudio() {
@@ -85,6 +91,7 @@ export async function reproducirAudio(datos, { alNivel, alEmpezar } = {}) {
 
   try {
     await elemento.play();
+    desbloqueado = true;
   } catch {
     return false;
   }
@@ -109,9 +116,16 @@ export async function reproducirAudio(datos, { alNivel, alEmpezar } = {}) {
   requestAnimationFrame(medir);
 
   return new Promise((resolver) => {
+    let cerrado = false;
     const terminar = (completo) => {
+      if (cerrado) return;
+      cerrado = true;
       activo = false;
       alNivel?.(0);
+      // Libera el audio del teléfono para que el micrófono vuelva a funcionar en la siguiente pregunta.
+      elemento.pause();
+      elemento.removeAttribute("src");
+      elemento.load();
       elemento.removeEventListener("ended", alTerminar);
       elemento.removeEventListener("error", alFallar);
       elemento.removeEventListener("detenido", alDetener);
@@ -123,5 +137,8 @@ export async function reproducirAudio(datos, { alNivel, alEmpezar } = {}) {
     elemento.addEventListener("ended", alTerminar);
     elemento.addEventListener("error", alFallar);
     elemento.addEventListener("detenido", alDetener);
+    // Respaldo: si el navegador nunca avisa que terminó, cerramos al acabar la duración del audio.
+    const duracion = Number.isFinite(elemento.duration) ? elemento.duration : 30;
+    setTimeout(() => terminar(true), duracion * 1000 + 3000);
   });
 }

@@ -114,28 +114,7 @@ body.con-lumen .orbe { pointer-events: none; } /* el lienzo detecta el toque sob
 @keyframes parpadeo { 50% { opacity: 0.35; } }
 .conexion { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tinta-2); padding-top: 4px; }
 
-/* TEMPORAL: botón de prueba de voz */
 .barra__derecha { display: grid; justify-items: end; gap: 10px; }
-.prueba {
-  pointer-events: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid var(--linea);
-  background: var(--panel);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  font-family: var(--fuente-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tinta-2);
-  cursor: pointer;
-  transition: color 200ms ease, border-color 200ms ease;
-}
-.prueba:hover { color: var(--tinta); border-color: rgba(255, 138, 31, 0.5); }
-.prueba .material-symbols-rounded { font-size: 15px; }
 /* ---------- Núcleo ---------- */
 
 .orbe {
@@ -403,6 +382,34 @@ body[data-estado="pensando"] .microfono { opacity: 0.55; }
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+/* Capa para activar el audio con un toque (regla de los navegadores) */
+.activar {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  border: 0;
+  padding: 0 24px calc(var(--abajo) + 150px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(11, 6, 2, 0.35);
+  color: var(--tinta);
+  cursor: pointer;
+}
+.activar[hidden] { display: none; }
+.activar__texto {
+  padding: 12px 18px;
+  border: 1px solid var(--linea);
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-family: var(--fuente-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  animation: parpadeo 2.4s ease-in-out infinite;
 }
 
 .aviso {
