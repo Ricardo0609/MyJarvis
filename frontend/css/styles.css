@@ -136,22 +136,6 @@ body.con-lumen .orbe { pointer-events: none; } /* el lienzo detecta el toque sob
 }
 .prueba:hover { color: var(--tinta); border-color: rgba(255, 138, 31, 0.5); }
 .prueba .material-symbols-rounded { font-size: 15px; }
-.prueba--selector {
-  max-width: min(46vw, 240px);
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 26px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--tinta-2) 50%), linear-gradient(135deg, var(--tinta-2) 50%, transparent 50%);
-  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
-  background-size: 4px 4px;
-  background-repeat: no-repeat;
-  background-color: var(--panel);
-  text-transform: none;
-  letter-spacing: 0.04em;
-}
-.prueba--selector[hidden] { display: none; }
-.prueba--selector option { background: #1a0e04; color: var(--tinta); }
-
 /* ---------- Núcleo ---------- */
 
 .orbe {

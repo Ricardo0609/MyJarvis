@@ -53,14 +53,14 @@ async function pedir(ruta, { metodo = "GET", cuerpo, tiempoMax = 90000 } = {}) {
 }
 
 // Pide a Gemini el audio de una frase (WAV). Lanza error si no se pudo generar.
-async function pedirAudio(texto, nombreVoz) {
+async function pedirAudio(texto) {
   const control = new AbortController();
   const temporizador = setTimeout(() => control.abort(), 25000);
   try {
     const respuesta = await fetch("/api/voz", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Clave": claveEnMemoria },
-      body: JSON.stringify({ texto, voz: nombreVoz || null }),
+      body: JSON.stringify({ texto }),
       signal: control.signal,
     });
     if (respuesta.status === 401) throw new ErrorClave("Clave incorrecta");
@@ -76,11 +76,6 @@ async function pedirAudio(texto, nombreVoz) {
     clearTimeout(temporizador);
   }
 }
-
-export const preferenciaVoz = {
-  obtener: () => leer("jarvis.voz"),
-  guardar: (valor) => guardar("jarvis.voz", valor),
-};
 
 export const api = {
   voz: pedirAudio,

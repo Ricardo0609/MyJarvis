@@ -93,7 +93,7 @@ def cargar_config() -> Config:
         voz_motor=_env("VOZ_MOTOR", "gemini").lower(),
         modelo_tts=_env("MODELO_TTS", "gemini-3.8-flash-tts"),
         modelos_tts_respaldo=tuple(m.strip() for m in _env(
-            "MODELOS_TTS_RESPALDO", "gemini-3.8-flash-lite-tts").split(",") if m.strip()),
+            "MODELOS_TTS_RESPALDO", "gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview").split(",") if m.strip()),
         voz_gemini=_env("VOZ_GEMINI", "Charon"),
         voz_estilo=_env("VOZ_ESTILO", "sereno, elegante y preciso, como un mayordomo refinado"),
         investigacion_modo=_env("INVESTIGACION_MODO", "gratis").lower(),

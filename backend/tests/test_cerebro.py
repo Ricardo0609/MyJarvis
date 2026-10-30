@@ -210,8 +210,7 @@ def test_api_voz_devuelve_audio_y_respaldo(monkeypatch):
         estado = cliente.get("/api/estado", headers={"X-Clave": "secreto"}).json()
     assert sin_clave.status_code == 401
     assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content.endswith(b"hola")
-    assert estado["voz"]["motor"] == "gemini" and estado["voz"]["predeterminada"] == "Charon"
-    assert any(v["nombre"] == "Iapetus" for v in estado["voz"]["voces"])
+    assert estado["voz"] == {"motor": "gemini", "predeterminada": "Charon"}
 
     async def sintetizar_roto(texto, nombre=None):
         raise RuntimeError("429 RESOURCE_EXHAUSTED")
@@ -219,4 +218,4 @@ def test_api_voz_devuelve_audio_y_respaldo(monkeypatch):
     monkeypatch.setattr(voz, "sintetizar", sintetizar_roto)
     with TestClient(app) as cliente:
         r = cliente.post("/api/voz", json={"texto": "hola"}, headers={"X-Clave": "secreto"})
-    assert r.status_code == 503 and "RESOURCE_EXHAUSTED" in r.json()["detail"]
+    assert r.status_code == 503 and "límite de uso" in r.json()["detail"] and "RESOURCE_EXHAUSTED" in r.json()["detail"]

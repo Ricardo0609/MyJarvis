@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import sesiones, voz
-from .cerebro import procesar
+from .cerebro import _explicar_error as explicar_error, procesar
 from .config import RAIZ, config
 from .notion import notion
 
@@ -103,11 +103,7 @@ async def estado(x_clave: str = Header(default="")) -> dict:
     return {**base, "autorizado": True, "cerebro": config.orquestador_efectivo,
             "investigacion": config.investigacion_modo if config.gemini_api_key else "no configurada",
             "web_gratis": bool(config.tavily_api_key), "notion": notion.configurado,
-            "voz": {"motor": "gemini" if voz.disponible() else "navegador",
-                    "predeterminada": config.voz_gemini,
-                    "voces": [{"nombre": n, "caracter": c} for n, c in voz.VOCES.items()]
-                    + ([] if config.voz_gemini in voz.VOCES else
-                       [{"nombre": config.voz_gemini, "caracter": "voz diseñada"}])}}
+            "voz": {"motor": "gemini" if voz.disponible() else "navegador", "predeterminada": config.voz_gemini}}
 
 
 class PeticionVoz(BaseModel):
@@ -124,8 +120,8 @@ async def hablar(datos: PeticionVoz) -> Response:
     try:
         audio = await voz.sintetizar(datos.texto, datos.voz)
     except Exception as error:  # noqa: BLE001
-        log.warning("No se pudo generar la voz: %s", str(error)[:200])
-        raise HTTPException(503, f"No se pudo generar la voz: {str(error)[:160]}") from error
+        log.warning("No se pudo generar la voz: %s", str(error)[:300])
+        raise HTTPException(503, f"{explicar_error(error)} ({type(error).__name__}: {str(error)[:120]})") from error
     log.info("Voz generada en %.1f s (%s)", time.monotonic() - inicio, voz.voz_permitida(datos.voz))
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 

@@ -91,6 +91,8 @@ export const voz = {
   _hablando: false,
   // Voz de Gemini: la app conecta aquí una función async (texto) => ArrayBuffer con el audio.
   motorRemoto: null,
+  // Si la voz de Gemini falla, ¿usar la del navegador? Ricardo prefiere solo Charon: apagado.
+  respaldoNavegador: false,
   ultimoMotor: "",
   ultimoError: "",
 
@@ -138,6 +140,10 @@ export const voz = {
         this.ultimoError = "el navegador no dejó reproducir el audio";
       } catch (error) {
         this.ultimoError = error.message || "falló la voz de Gemini";
+      }
+      if (!this.respaldoNavegador) {
+        this.ultimoMotor = "";
+        return false;
       }
     }
     this.ultimoMotor = "navegador";

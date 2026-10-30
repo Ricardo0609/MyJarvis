@@ -1,4 +1,4 @@
-import { api, clave, ErrorClave, preferenciaVoz } from "./api.js";
+import { api, clave, ErrorClave } from "./api.js";
 import { desbloquearAudio } from "./audio.js";
 import { crearOrbe } from "./orbe.js";
 import { mostrarEnPanel, ocultarPanel } from "./panel.js";
@@ -11,13 +11,11 @@ const formTeclado = $("form-teclado");
 const entradaTexto = $("entrada-texto");
 const dialogoClave = $("dialogo-clave");
 const aviso = $("aviso");
-const selectorVoz = $("selector-voz");
 
 const orbe = crearOrbe({ alTocar: () => alTocarMicrofono() }); // tocar el Núcleo Lumen = hablar
 let ocupado = false;
 let temporizadorAviso;
 let vozGeminiDisponible = false;
-let avisoVozMostrado = false;
 
 const ESTADOS = {
   reposo: "Toca el núcleo para hablar",
@@ -53,14 +51,11 @@ function cerrarPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Voz: Gemini (la que elijas en el selector) o la del navegador de respaldo
+// Voz: siempre Charon (Gemini). Solo si el servidor no tiene Gemini se usa la del navegador.
 // ---------------------------------------------------------------------------
 
 function configurarVoz() {
-  const elegida = preferenciaVoz.obtener();
-  voz.motorRemoto = vozGeminiDisponible && elegida !== "navegador"
-    ? (texto) => api.voz(texto, elegida || null)
-    : null;
+  voz.motorRemoto = vozGeminiDisponible ? (texto) => api.voz(texto) : null;
 }
 
 // Habla y mueve el núcleo: se queda "pensando" mientras se genera el audio y pasa a "hablando" al sonar.
@@ -69,26 +64,10 @@ async function decir(texto) {
     alNivel: (n) => orbe.nivel(n),
     alEmpezar: () => ponerEstado("hablando"),
   });
-  if (voz.motorRemoto && voz.ultimoMotor === "navegador" && !avisoVozMostrado) {
-    avisoVozMostrado = true;
-    mostrarAviso(`La voz de Gemini no respondió (${voz.ultimoError}); usé la del navegador.`, 9000);
+  if (!sono && voz.motorRemoto) {
+    mostrarAviso(`No sonó la voz de Charon: ${voz.ultimoError || "el navegador no dejó reproducir el audio"}.`, 9000);
   }
   return sono;
-}
-
-function llenarSelectorVoz(infoVoz) {
-  selectorVoz.replaceChildren();
-  const elegida = preferenciaVoz.obtener();
-  if (infoVoz?.motor === "gemini") {
-    for (const { nombre, caracter } of infoVoz.voces) {
-      const opcion = new Option(`${nombre} · ${caracter}${nombre === infoVoz.predeterminada ? " (predeterminada)" : ""}`, nombre);
-      selectorVoz.append(opcion);
-    }
-  }
-  selectorVoz.append(new Option("Voz del navegador", "navegador"));
-  const valores = [...selectorVoz.options].map((o) => o.value);
-  selectorVoz.value = valores.includes(elegida) ? elegida : (infoVoz?.motor === "gemini" ? infoVoz.predeterminada : "navegador");
-  selectorVoz.hidden = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +102,8 @@ async function enviar(texto) {
 
     ponerEstado("pensando", "");
     transcripcion.textContent = respuesta.voz; // la respuesta queda escrita como subtítulo
-    const sono = await decir(respuesta.voz);
+    await decir(respuesta.voz);
     ponerEstado("reposo");
-    if (!sono) mostrarAviso("No se reprodujo la voz. Toca “Probar voz” arriba para revisar el audio.", 9000);
   } catch (error) {
     limpiarEsperas();
     if (error instanceof ErrorClave) {
@@ -213,7 +191,7 @@ $("btn-nueva").addEventListener("click", async () => {
   }
 });
 
-// TEMPORAL: prueba de voz, selector de voces y diagnóstico rápido
+// TEMPORAL: prueba de voz y diagnóstico rápido
 async function probarVoz() {
   // El audio se habilita aquí mismo, dentro del toque (lo exige el celular).
   desbloquearAudio();
@@ -228,25 +206,18 @@ async function probarVoz() {
   const servidor = !estado
     ? "Servidor: sin conexión"
     : `Cerebro: ${estado.cerebro || "?"} · Notion: ${estado.notion ? "conectado" : "sin conectar"} · Web: ${estado.web_gratis ? "Tavily" : "sin búsqueda web"}`;
-  const queVoz = voz.ultimoMotor === "gemini"
-    ? `Voz: Gemini (${selectorVoz.value})`
-    : `Voz: navegador (${voz.nombre()})${voz.ultimoError ? ` — Gemini: ${voz.ultimoError}` : ""}`;
-  mostrarAviso(`${sono ? "✓ Voz funcionando" : "✗ No se reprodujo la voz: revisa el volumen y la salida de audio"} · ${queVoz} · ${servidor}`, 12000);
+  const queVoz = voz.ultimoMotor === "gemini" ? "Voz: Charon" : voz.ultimoMotor === "navegador" ? `Voz: navegador (${voz.nombre()})` : "Voz: no sonó";
+  if (sono) mostrarAviso(`✓ Voz funcionando · ${queVoz} · ${servidor}`, 12000);
 }
 
 $("btn-prueba").addEventListener("click", probarVoz);
-selectorVoz.addEventListener("change", () => {
-  preferenciaVoz.guardar(selectorVoz.value);
-  configurarVoz();
-  probarVoz();
-});
 
 $("btn-microfono").addEventListener("click", alTocarMicrofono);
 $("orbe").addEventListener("click", alTocarMicrofono);
 $("panel-cerrar").addEventListener("click", cerrarPanel);
 
 document.addEventListener("keydown", (evento) => {
-  const escribiendo = evento.target.closest("input, textarea, select, dialog");
+  const escribiendo = evento.target.closest("input, textarea, dialog");
   if (evento.code === "Space" && !escribiendo && !evento.repeat) {
     evento.preventDefault();
     alTocarMicrofono();
@@ -263,7 +234,6 @@ function pedirClave(error = "") {
 function aplicarEstado(estado) {
   $("conexion").textContent = estado.cerebro === "gemini" ? "Gemini" : estado.cerebro === "claude" ? "Claude" : "";
   vozGeminiDisponible = estado.voz?.motor === "gemini";
-  llenarSelectorVoz(estado.voz);
   configurarVoz();
 }
 
