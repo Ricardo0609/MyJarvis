@@ -172,16 +172,16 @@ $("btn-nueva").addEventListener("click", async () => {
 
 // TEMPORAL: prueba de audio y diagnóstico rápido (se quitará cuando todo funcione)
 $("btn-prueba").addEventListener("click", async () => {
-  voz.desbloquear();
   if (!voz.soportada) {
     mostrarAviso("Este navegador no puede hablar (no tiene síntesis de voz). Prueba con Chrome.", 9000);
     return;
   }
-  voz.callar();
+  // Se habla directo dentro del toque (sin desbloquear ni cancelar antes): así lo exige el iPhone.
   const saludo = "Hola, bienvenido de nuevo.";
+  const hablando = voz.hablar(saludo, { alNivel: (n) => orbe.nivel(n) });
   ponerEstado("hablando");
   transcripcion.textContent = saludo;
-  const seEscucho = await voz.hablar(saludo, { alNivel: (n) => orbe.nivel(n) });
+  const seEscucho = await hablando;
   ponerEstado("reposo");
 
   const estado = await api.estado().catch(() => null);

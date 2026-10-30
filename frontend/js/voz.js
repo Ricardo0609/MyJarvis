@@ -98,11 +98,14 @@ export const voz = {
     return this._voz;
   },
 
-  // iPhone exige que la primera síntesis ocurra dentro de un toque del usuario.
+  // iPhone y algunos Android solo dejan hablar si la PRIMERA frase se pide directo dentro de un toque.
+  // Se llama al tocar el micrófono, el núcleo o el teclado, para que la respuesta (que llega después) sí suene.
   desbloquear() {
     if (!this.soportada || this._desbloqueada) return;
     const silencio = new SpeechSynthesisUtterance(" ");
     silencio.volume = 0;
+    silencio.lang = this._voz?.lang || "es-MX";
+    speechSynthesis.resume();
     speechSynthesis.speak(silencio);
     this._desbloqueada = true;
   },
@@ -185,7 +188,13 @@ export const voz = {
       };
 
       requestAnimationFrame(animar);
-      setTimeout(siguiente, ocupada ? 150 : 0);
+      // Si no había otra voz sonando, hablamos de inmediato: así, cuando viene de un toque
+      // (como "Probar voz"), el teléfono lo cuenta como acción del usuario y sí lo deja sonar.
+      if (ocupada) setTimeout(siguiente, 150);
+      else {
+        this._desbloqueada = true;
+        siguiente();
+      }
     });
   },
 };
