@@ -55,7 +55,7 @@ async function pedir(ruta, { metodo = "GET", cuerpo, tiempoMax = 90000 } = {}) {
 // Pide a Gemini el audio de una frase (WAV). Lanza error si no se pudo generar.
 async function pedirAudio(texto) {
   const control = new AbortController();
-  const temporizador = setTimeout(() => control.abort(), 25000);
+  const temporizador = setTimeout(() => control.abort(), 30000);
   try {
     const respuesta = await fetch("/api/voz", {
       method: "POST",

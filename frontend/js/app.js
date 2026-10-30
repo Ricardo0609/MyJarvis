@@ -100,7 +100,7 @@ async function enviar(texto) {
       cerrarPanel();
     }
 
-    ponerEstado("pensando", "");
+    ponerEstado("pensando", vozGeminiDisponible ? "Preparando la voz…" : "");
     transcripcion.textContent = respuesta.voz; // la respuesta queda escrita como subtítulo
     await decir(respuesta.voz);
     ponerEstado("reposo");
@@ -197,7 +197,7 @@ async function probarVoz() {
   desbloquearAudio();
   voz.callar();
   const saludo = "Hola, bienvenido de nuevo.";
-  ponerEstado("pensando", "");
+  ponerEstado("pensando", vozGeminiDisponible ? "Preparando la voz…" : "");
   transcripcion.textContent = saludo;
   const sono = await decir(saludo);
   ponerEstado("reposo");

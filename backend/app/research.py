@@ -22,7 +22,7 @@ _cliente_gemini = None
 # Errores pasajeros (modelo saturado, límite por minuto, fallo interno) o modelo no disponible:
 # en esos casos conviene reintentar o cambiar a otro modelo gratis.
 _SENALES_CAMBIAR = ("503", "unavailable", "high demand", "overloaded", "429", "resource_exhausted",
-                    "500", "internal", "404", "not_found", "not found")
+                    "500", "internal", "404", "not_found", "not found", "timeout", "timed out")
 
 
 def gemini():

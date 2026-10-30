@@ -219,3 +219,36 @@ def test_api_voz_devuelve_audio_y_respaldo(monkeypatch):
     with TestClient(app) as cliente:
         r = cliente.post("/api/voz", json={"texto": "hola"}, headers={"X-Clave": "secreto"})
     assert r.status_code == 503 and "límite de uso" in r.json()["detail"] and "RESOURCE_EXHAUSTED" in r.json()["detail"]
+
+
+def test_voz_lenta_pasa_al_siguiente_modelo(monkeypatch):
+    from app import voz
+
+    usados = []
+
+    async def generar_falso(modelo, texto, nombre, limite):
+        usados.append(modelo)
+        if modelo == "gemini-3.8-flash-lite-tts":
+            await asyncio.sleep(5)  # se "atora"
+        return b"RIFF-audio-" + modelo.encode()
+
+    monkeypatch.setattr(voz, "_generar", generar_falso)
+    monkeypatch.setattr(voz, "LIMITES_SEGUNDOS", (0.05, 0.05, 0.05))
+    voz._cache.clear()
+    audio = asyncio.run(voz.sintetizar("Hola"))
+    assert usados == ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"]
+    assert audio == b"RIFF-audio-gemini-3.8-flash-tts"
+
+
+def test_voz_todas_lentas_da_error_claro(monkeypatch):
+    import pytest
+    from app import voz
+
+    async def generar_lento(modelo, texto, nombre, limite):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(voz, "_generar", generar_lento)
+    monkeypatch.setattr(voz, "LIMITES_SEGUNDOS", (0.05, 0.05, 0.05))
+    voz._cache.clear()
+    with pytest.raises(TimeoutError, match="tardó más de"):
+        asyncio.run(voz.sintetizar("Otra frase"))
