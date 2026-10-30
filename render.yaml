@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: jarvis
+    runtime: python
+    plan: free
+    # Sin "rootDir": el servidor necesita ver las carpetas backend y frontend.
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT
+    healthCheckPath: /salud
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1
+      - key: ENTORNO
+        value: produccion
+      - key: ZONA_HORARIA
+        value: America/Mexico_City
+      - key: ORQUESTADOR
+        value: claude
+      - key: INVESTIGACION_MODO
+        value: gratis
+      - key: NOTION_VERSION
+        value: 2026-03-11
+      - key: NOTION_OBJETIVOS_PAGE_ID
+        value: cdcf919711ba419891bc4634a9eab0a6
+      - key: NOTION_CALENDARIO_DATABASE_ID
+        value: b7b1b527efef42929021415ecbc00347
+      - key: APP_CLAVE
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: NOTION_NOTAS_PADRE_ID
+        sync: false

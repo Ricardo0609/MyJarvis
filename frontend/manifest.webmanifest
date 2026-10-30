@@ -1,0 +1,14 @@
+{
+  "name": "JARVIS",
+  "short_name": "JARVIS",
+  "description": "Asistente personal por voz",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0306",
+  "theme_color": "#0a0306",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

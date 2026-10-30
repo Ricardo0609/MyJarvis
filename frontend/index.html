@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0306">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>JARVIS</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=block" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body data-estado="reposo">
+  <!-- Núcleo Lumen (3D). Se acomoda solo sobre la caja de #orbe. -->
+  <canvas id="lienzo" aria-hidden="true"></canvas>
+  <div class="vineta" aria-hidden="true"></div>
+  <div class="escaneo" aria-hidden="true"></div>
+
+  <main class="escenario">
+    <header class="barra">
+      <div class="marca">
+        <span class="marca__nombre">JARVIS</span>
+        <span class="marca__estado"><span class="punto" aria-hidden="true"></span><span id="estado-corto">En reposo</span></span>
+      </div>
+      <div class="barra__derecha">
+        <span class="conexion" id="conexion" aria-live="polite"></span>
+        <!-- TEMPORAL: botón para probar que la voz se escucha -->
+        <button class="prueba" id="btn-prueba" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">volume_up</span>Probar voz
+        </button>
+      </div>
+    </header>
+
+    <!-- #orbe marca dónde va el Núcleo Lumen y su tamaño. Si no hay WebGL, muestra un orbe CSS. -->
+    <button class="orbe" id="orbe" type="button" aria-label="Hablar con JARVIS">
+      <span class="orbe__respaldo" aria-hidden="true"></span>
+    </button>
+    <div class="leyendas">
+      <p class="estado" id="estado" aria-live="polite">Toca el núcleo para hablar</p>
+      <p class="transcripcion" id="transcripcion" aria-live="polite"></p>
+    </div>
+
+    <!-- Panel: aparece cuando pides ver algo -->
+    <section class="panel" id="panel" aria-live="polite" hidden>
+      <div class="panel__cabecera">
+        <h1 class="panel__titulo" id="panel-titulo"></h1>
+        <button class="icono" id="panel-cerrar" type="button" aria-label="Cerrar panel">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+      <div class="panel__cuerpo" id="panel-cuerpo"></div>
+    </section>
+
+    <footer class="controles">
+      <button class="icono icono--suave" id="btn-teclado" type="button" aria-label="Escribir en lugar de hablar">
+        <span class="material-symbols-rounded">keyboard</span>
+      </button>
+      <button class="microfono" id="btn-microfono" type="button" aria-label="Hablar">
+        <span class="material-symbols-rounded">mic</span>
+      </button>
+      <button class="icono icono--suave" id="btn-nueva" type="button" aria-label="Empezar conversación nueva">
+        <span class="material-symbols-rounded">refresh</span>
+      </button>
+
+      <form class="teclado" id="form-teclado" hidden>
+        <input id="entrada-texto" type="text" autocomplete="off" placeholder="Escribe tu orden" aria-label="Orden escrita" maxlength="2000">
+        <button class="icono" type="submit" aria-label="Enviar">
+          <span class="material-symbols-rounded">arrow_upward</span>
+        </button>
+      </form>
+    </footer>
+  </main>
+
+  <!-- Clave de acceso (se pide una sola vez por dispositivo) -->
+  <dialog class="hoja" id="dialogo-clave">
+    <form method="dialog" id="form-clave">
+      <h2>Clave de acceso</h2>
+      <p>Es la APP_CLAVE que pusiste en el servidor. Se guarda solo en este dispositivo.</p>
+      <input id="entrada-clave" type="password" autocomplete="current-password" required aria-label="Clave de acceso">
+      <p class="hoja__error" id="error-clave" role="alert"></p>
+      <button class="boton" type="submit">Entrar</button>
+    </form>
+  </dialog>
+
+  <div class="aviso" id="aviso" role="status" hidden></div>
+
+  <!-- Three.js r128 + resplandor (los mismos que usa tu Núcleo Lumen) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
