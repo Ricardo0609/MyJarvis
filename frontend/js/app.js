@@ -7,6 +7,7 @@ import { escucha, voz } from "./voz.js";
 const $ = (id) => document.getElementById(id);
 const textoEstado = $("estado");
 const transcripcion = $("transcripcion");
+const leyendas = document.querySelector(".leyendas");
 const formTeclado = $("form-teclado");
 const entradaTexto = $("entrada-texto");
 const dialogoClave = $("dialogo-clave");
@@ -37,6 +38,30 @@ function ponerEstado(estado, texto) {
   textoEstado.textContent = texto ?? ESTADOS[estado] ?? "";
   estadoCorto.textContent = ESTADOS_CORTOS[estado] || "";
 }
+
+// Pone el subtítulo y, si es largo, encoge el núcleo para que el texto no choque con los botones.
+let revisionSubtitulo;
+function subtitulo(texto) {
+  transcripcion.textContent = texto;
+  leyendas.scrollTop = 0;
+  // Un texto corto siempre cabe: el núcleo regresa a su tamaño normal.
+  if (texto.length < 90) document.body.classList.remove("texto-largo");
+  acomodarSubtitulo();
+}
+
+function acomodarSubtitulo() {
+  const desborda = () => leyendas.scrollHeight > leyendas.clientHeight + 2;
+  if (transcripcion.textContent && desborda()) document.body.classList.add("texto-largo");
+  // El núcleo tarda ~0.7 s en moverse: después revisamos si todavía hay que desplazar el texto.
+  clearTimeout(revisionSubtitulo);
+  revisionSubtitulo = setTimeout(() => leyendas.classList.toggle("desborda", desborda()), 750);
+  leyendas.classList.toggle("desborda", desborda());
+}
+
+window.addEventListener("resize", () => {
+  document.body.classList.remove("texto-largo");
+  acomodarSubtitulo();
+});
 
 function mostrarAviso(mensaje, ms = 4500) {
   aviso.textContent = mensaje;
@@ -78,7 +103,7 @@ async function enviar(texto) {
   texto = texto.trim();
   if (!texto || ocupado) return;
   ocupado = true;
-  transcripcion.textContent = texto;
+  subtitulo(texto);
   ponerEstado("pensando");
   const enLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
   const esperas = [
@@ -101,7 +126,7 @@ async function enviar(texto) {
     }
 
     ponerEstado("pensando", vozGeminiDisponible ? "Preparando la voz…" : "");
-    transcripcion.textContent = respuesta.voz; // la respuesta queda escrita como subtítulo
+    subtitulo(respuesta.voz); // la respuesta queda escrita como subtítulo
     await decir(respuesta.voz);
     ponerEstado("reposo");
   } catch (error) {
@@ -125,10 +150,10 @@ function escuchar() {
     mostrarAviso("Este navegador no reconoce voz. Usa Chrome en PC/Android o Safari en iPhone; mientras, puedes escribir.", 7000);
     return;
   }
-  transcripcion.textContent = "";
+  subtitulo("");
   ponerEstado("escuchando");
   escucha.iniciar({
-    alParcial: (texto) => { transcripcion.textContent = texto; },
+    alParcial: (texto) => subtitulo(texto),
     alTerminar: (texto) => {
       if (texto) return enviar(texto);
       if (ocupado) return;
@@ -187,7 +212,7 @@ $("btn-nueva").addEventListener("click", async () => {
   voz.callar();
   cerrarPanel();
   ponerEstado("reposo");
-  transcripcion.textContent = "";
+  subtitulo("");
   try {
     await api.olvidar();
     mostrarAviso("Conversación nueva");
@@ -214,7 +239,7 @@ async function saludar() {
     mostrarAviso(`No sonó la voz de Charon: ${error.message}.`, 9000);
     return;
   }
-  transcripcion.textContent = SALUDO;
+  subtitulo(SALUDO);
   const reproducir = async () => {
     const sono = await reproducirAudio(audio, {
       alNivel: (n) => orbe.nivel(n),

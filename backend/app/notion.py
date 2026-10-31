@@ -6,6 +6,7 @@ Usa la API REST de Notion directamente con httpx para no depender de un SDK que 
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 import unicodedata
@@ -16,6 +17,7 @@ import httpx
 
 from .config import config
 
+log = logging.getLogger("jarvis.notion")
 API = "https://api.notion.com/v1"
 LIMITE_TEXTO = 2000  # Notion acepta hasta 2000 caracteres por fragmento de texto
 TIPOS_HEADING = ("heading_1", "heading_2", "heading_3", "heading_4")
@@ -322,8 +324,11 @@ class Notion:
             nodo.hijos = sub
         return nodos
 
-    async def agregar_bloques(self, padre_id: str, bloques: list[dict], despues_de: str | None = None) -> list[dict]:
+    async def agregar_bloques(self, padre_id: str, bloques: list[dict],
+                              despues_de: str | None = None) -> tuple[list[dict], bool]:
+        """Agrega bloques; devuelve (bloques creados, si quedaron en la posición pedida)."""
         creados: list[dict] = []
+        en_posicion = True
         for inicio in range(0, len(bloques), 100):
             cuerpo: dict[str, Any] = {"children": bloques[inicio:inicio + 100]}
             if despues_de:
@@ -333,18 +338,34 @@ class Notion:
                     cuerpo["after"] = despues_de
             try:
                 datos = await self._pedir("PATCH", f"/blocks/{padre_id}/children", json=cuerpo)
-            except NotionError:
+            except NotionError as error:
                 if not despues_de:
                     raise
-                # Si la posición falla, lo agregamos al final del contenedor.
-                cuerpo.pop("position", None)
-                cuerpo.pop("after", None)
-                datos = await self._pedir("PATCH", f"/blocks/{padre_id}/children", json=cuerpo)
+                log.warning("Notion no aceptó la posición (%s). Pruebo con la API anterior.", error)
+                datos = await self._agregar_con_api_anterior(padre_id, cuerpo, despues_de)
+                if datos is None:
+                    # Último recurso: al final del contenedor, avisando que no quedó en su lugar.
+                    log.warning("Tampoco funcionó: lo agrego al final del contenedor %s", padre_id)
+                    cuerpo.pop("position", None)
+                    cuerpo.pop("after", None)
+                    datos = await self._pedir("PATCH", f"/blocks/{padre_id}/children", json=cuerpo)
+                    en_posicion = False
             nuevos = datos.get("results", [])
             creados.extend(nuevos)
             if despues_de and nuevos:
                 despues_de = nuevos[-1]["id"]
-        return creados
+        return creados, en_posicion
+
+    async def _agregar_con_api_anterior(self, padre_id: str, cuerpo: dict, despues_de: str) -> dict | None:
+        """La versión 2025-09-03 de la API usa "after" en lugar de "position"."""
+        anterior = {k: v for k, v in cuerpo.items() if k != "position"}
+        anterior["after"] = despues_de
+        try:
+            return await self._pedir("PATCH", f"/blocks/{padre_id}/children", json=anterior,
+                                     headers={"Notion-Version": "2025-09-03"})
+        except NotionError as error:
+            log.warning("La API anterior tampoco aceptó la posición: %s", error)
+            return None
 
     # ---- Objetivos (encabezados + checkboxes) -----------------------------
 
@@ -402,9 +423,19 @@ class Notion:
         secciones = await self.secciones_objetivos(forzar=True)
         destino = self._elegir_seccion(secciones, seccion)
         bloque = {"type": "to_do", "to_do": {"rich_text": a_rich_text(texto), "checked": False}}
-        creados = await self.agregar_bloques(destino.contenedor_id, [bloque], despues_de=destino.ancla_id or None)
+        creados, en_posicion = await self.agregar_bloques(
+            destino.contenedor_id, [bloque], despues_de=destino.ancla_id or None)
         self._cache_objetivos = None
-        return {"ok": True, "seccion": destino.titulo, "tarea_id": _id_corto(creados[0]["id"]) if creados else None}
+        anterior = next((t.texto for t in destino.tareas if t.id == _id_corto(destino.ancla_id)), None)
+        resultado = {"ok": True, "seccion": destino.titulo.strip(),
+                     "tarea_id": _id_corto(creados[0]["id"]) if creados else None,
+                     "ubicacion": (f"debajo de «{anterior[:60]}»" if anterior else "al inicio de la sección")
+                     if en_posicion else "al final del bloque que contiene la sección"}
+        if not en_posicion:
+            resultado["aviso"] = ("Notion no dejó colocarla justo en la sección; quedó al final. "
+                                  "Díselo al usuario en una frase.")
+        log.info("Tarea agregada en '%s' (%s)", resultado["seccion"], resultado["ubicacion"])
+        return resultado
 
     async def marcar_tarea(self, tarea_id: str, hecho: bool = True) -> dict:
         datos = await self._pedir("PATCH", f"/blocks/{_id_corto(tarea_id)}", json={"to_do": {"checked": hecho}})
@@ -573,7 +604,7 @@ class Notion:
 
     async def agregar_a_pagina(self, pagina_id: str, contenido_markdown: str) -> dict:
         bloques = markdown_a_bloques(contenido_markdown)
-        await self.agregar_bloques(_id_corto(pagina_id), bloques)
+        await self.agregar_bloques(_id_corto(pagina_id), bloques)  # al final de la página
         if _id_corto(pagina_id) == config.notion_objetivos_id:
             self._cache_objetivos = None
         return {"ok": True, "bloques_agregados": len(bloques)}

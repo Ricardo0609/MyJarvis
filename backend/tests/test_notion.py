@@ -194,3 +194,38 @@ def test_calendario_listar_y_crear():
     assert alta["properties"]["Fecha"]["date"] == {"start": "2026-11-01T19:00", "time_zone": "America/Mexico_City"}
     assert alta["properties"]["Tipo de evento"] == {"select": {"name": "Partido"}}
     assert cliente.tipos_evento_en_cache() == ["Partido", "Evento"]
+
+
+def test_si_notion_rechaza_la_posicion_usa_la_api_anterior():
+    registro = []
+
+    def manejar(request: httpx.Request):
+        partes = request.url.path.strip("/").split("/")
+        if request.method == "GET":
+            return httpx.Response(200, json={"results": ARBOL.get(partes[2], []), "has_more": False})
+        cuerpo = json.loads(request.content)
+        registro.append((request.headers["Notion-Version"], cuerpo))
+        if "position" in cuerpo:
+            return httpx.Response(400, json={"message": "body.position should be not present"})
+        return httpx.Response(200, json={"results": [{"id": "nuevo", "type": "to_do"}]})
+
+    cliente = Notion(token="ntn", transporte=httpx.MockTransport(manejar))
+    r = asyncio.run(cliente.agregar_tarea("objetivos de la semana", "Empezar en electrónica"))
+    assert [v for v, _ in registro] == ["2026-03-11", "2025-09-03"]
+    assert registro[1][1]["after"] == "td-extra" and "position" not in registro[1][1]
+    assert r["ubicacion"] == "debajo de «Extra:»" and "aviso" not in r
+
+
+def test_si_ninguna_posicion_funciona_lo_dice():
+    def manejar(request: httpx.Request):
+        partes = request.url.path.strip("/").split("/")
+        if request.method == "GET":
+            return httpx.Response(200, json={"results": ARBOL.get(partes[2], []), "has_more": False})
+        cuerpo = json.loads(request.content)
+        if "position" in cuerpo or "after" in cuerpo:
+            return httpx.Response(400, json={"message": "no"})
+        return httpx.Response(200, json={"results": [{"id": "nuevo", "type": "to_do"}]})
+
+    cliente = Notion(token="ntn", transporte=httpx.MockTransport(manejar))
+    r = asyncio.run(cliente.agregar_tarea("pendientes de la semana", "Algo"))
+    assert "aviso" in r and r["ubicacion"] == "al final del bloque que contiene la sección"

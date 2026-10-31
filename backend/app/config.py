@@ -100,10 +100,11 @@ def cargar_config() -> Config:
         tavily_api_key=_env("TAVILY_API_KEY"),
         notion_token=_env("NOTION_TOKEN"),
         notion_version=_env("NOTION_VERSION", "2026-03-11"),
-        notion_objetivos_id=_limpiar_id(_env("NOTION_OBJETIVOS_PAGE_ID")),
-        notion_calendario_db_id=_limpiar_id(_env("NOTION_CALENDARIO_DATABASE_ID")),
+        # IDs de tus páginas (no son secretos): así funciona aunque falten en el .env o en Render.
+        notion_objetivos_id=_limpiar_id(_env("NOTION_OBJETIVOS_PAGE_ID", "cdcf919711ba419891bc4634a9eab0a6")),
+        notion_calendario_db_id=_limpiar_id(_env("NOTION_CALENDARIO_DATABASE_ID", "b7b1b527efef42929021415ecbc00347")),
         notion_calendario_ds_id=_env("NOTION_CALENDARIO_DATA_SOURCE_ID"),
-        notion_notas_padre_id=_limpiar_id(_env("NOTION_NOTAS_PADRE_ID")),
+        notion_notas_padre_id=_limpiar_id(_env("NOTION_NOTAS_PADRE_ID", "40a7aa605b5b81e585e0d43c39b8f57d")),
     )
 
 

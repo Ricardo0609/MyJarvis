@@ -28,7 +28,9 @@ HERRAMIENTAS: list[dict[str, Any]] = [
     },
     {
         "name": "objetivos_agregar",
-        "description": "Agrega una tarea (checkbox) a una sección de la página 'Objetivos'.",
+        "description": (
+            "Agrega una tarea (checkbox) DENTRO de una sección de la página 'Objetivos', justo debajo de la "
+            "última tarea de esa sección. Es la única forma correcta de agregar pendientes a Objetivos."),
         "parameters": {**_OBJ, "properties": {
             "seccion": {"type": "string", "description": "Título exacto o id de la sección (de objetivos_listar)."},
             "texto": {"type": "string", "description": "Texto de la tarea, claro y breve."},
@@ -104,7 +106,9 @@ HERRAMIENTAS: list[dict[str, Any]] = [
     },
     {
         "name": "notion_agregar_a_pagina",
-        "description": "Agrega contenido (markdown sencillo) al final de una página existente.",
+        "description": (
+            "Agrega contenido (markdown sencillo) al final de una página existente. NUNCA la uses para agregar "
+            "tareas o pendientes a la página 'Objetivos': para eso usa objetivos_agregar."),
         "parameters": {**_OBJ, "properties": {
             "pagina_id": {"type": "string"},
             "contenido_markdown": {"type": "string"},

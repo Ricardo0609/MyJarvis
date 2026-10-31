@@ -145,17 +145,30 @@ body.con-lumen .orbe { pointer-events: none; } /* el lienzo detecta el toque sob
 body.con-lumen .orbe__respaldo { display: none; }
 @keyframes respirar { 50% { transform: scale(1.05); } }
 
+/* El subtítulo vive entre el núcleo y los controles: nunca se encima con los botones */
 .leyendas {
   position: absolute;
   left: 0;
   right: 0;
   top: calc(var(--orbe-y) + var(--tam-orbe) / 2 + 10px);
+  bottom: calc(var(--alto-controles) + var(--abajo) + 8px);
   display: grid;
+  align-content: start;
   justify-items: center;
   gap: 10px;
-  padding: 0 24px;
+  padding: 0 24px 12px;
   text-align: center;
-  transition: opacity 300ms ease;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto; /* para poder desplazar el texto con el dedo */
+  transition: opacity 300ms ease, top 700ms var(--curva);
+}
+.leyendas::-webkit-scrollbar { display: none; }
+/* Si aun así no cabe, el final se desvanece para indicar que hay más texto */
+.leyendas.desborda {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
 }
 .estado {
   margin: 0;
@@ -177,6 +190,13 @@ body[data-estado="error"] .estado { color: var(--primario); }
   line-height: 1.5;
   color: var(--tinta);
 }
+
+/* Respuesta larga: el núcleo se encoge y sube para dejarle espacio al texto */
+body.texto-largo {
+  --tam-orbe: min(74vw, calc(100dvh - 470px), 420px);
+  --orbe-y: calc(var(--arriba) + 72px + var(--tam-orbe) / 2);
+}
+body.texto-largo .transcripcion { font-size: 16px; max-width: 42ch; }
 
 /* ---------- Modo "mostrando": el núcleo sube y se encoge ---------- */
 
