@@ -8,6 +8,8 @@ const $ = (id) => document.getElementById(id);
 const textoEstado = $("estado");
 const transcripcion = $("transcripcion");
 const leyendas = document.querySelector(".leyendas");
+const accion = $("accion");
+const accionTexto = $("accion-texto");
 const formTeclado = $("form-teclado");
 const entradaTexto = $("entrada-texto");
 const dialogoClave = $("dialogo-clave");
@@ -63,6 +65,65 @@ window.addEventListener("resize", () => {
   acomodarSubtitulo();
 });
 
+// ---------------------------------------------------------------------------
+// Botón de acción (abrir o conectar Spotify)
+// ---------------------------------------------------------------------------
+
+let detenerEspera = null;
+
+function mostrarAccion(abrir) {
+  accionTexto.textContent = abrir.texto || "Abrir";
+  accion.href = abrir.url;
+  const externa = /^https?:\/\//.test(abrir.url) && !abrir.url.startsWith(location.origin);
+  accion.target = externa ? "_blank" : "_self";
+  accion.dataset.reintentar = abrir.reintentar ? "1" : "";
+  accion.hidden = false;
+  document.body.classList.add("con-accion");
+  acomodarSubtitulo();
+}
+
+function ocultarAccion() {
+  accion.hidden = true;
+  document.body.classList.remove("con-accion");
+}
+
+accion.addEventListener("click", () => {
+  if (accion.dataset.reintentar === "1") esperarSpotify();
+  setTimeout(ocultarAccion, 300);
+});
+
+// Después de abrir Spotify: en cuanto aparezca como dispositivo, empieza a sonar lo que pediste.
+function esperarSpotify() {
+  detenerEspera?.();
+  const inicio = Date.now();
+  let enCurso = false;
+  const intentar = async () => {
+    if (enCurso) return;
+    if (Date.now() - inicio > 90000) return detener();
+    enCurso = true;
+    try {
+      const r = await api.spotifyReintentar();
+      if (r.ok) {
+        detener();
+        mostrarAviso(`Reproduciendo ${r.nombre}${r.reproduciendo_en ? ` en ${r.reproduciendo_en}` : ""}.`, 6000);
+      } else if (r.motivo === "nada pendiente") {
+        detener();
+      }
+    } catch { /* se vuelve a intentar */ } finally {
+      enCurso = false;
+    }
+  };
+  const temporizador = setInterval(intentar, 4000);
+  const alVolver = () => { if (document.visibilityState === "visible") intentar(); };
+  document.addEventListener("visibilitychange", alVolver);
+  function detener() {
+    clearInterval(temporizador);
+    document.removeEventListener("visibilitychange", alVolver);
+    detenerEspera = null;
+  }
+  detenerEspera = detener;
+}
+
 function mostrarAviso(mensaje, ms = 4500) {
   aviso.textContent = mensaje;
   aviso.hidden = false;
@@ -103,6 +164,7 @@ async function enviar(texto) {
   texto = texto.trim();
   if (!texto || ocupado) return;
   ocupado = true;
+  ocultarAccion();
   subtitulo(texto);
   ponerEstado("pensando");
   const enLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
@@ -117,6 +179,8 @@ async function enviar(texto) {
     limpiarEsperas();
     if (respuesta.aviso) mostrarAviso(respuesta.aviso, 9000);
     $("conexion").textContent = respuesta.cerebro === "gemini" ? "Gemini" : "Claude";
+
+    if (respuesta.abrir) mostrarAccion(respuesta.abrir);
 
     if (respuesta.mostrar) {
       mostrarEnPanel(respuesta.mostrar);

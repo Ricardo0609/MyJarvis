@@ -137,6 +137,7 @@ Alternativa: **New → Blueprint** usa `render.yaml` con esta misma configuraci�
 | "Resume mi página de Hábitos atómicos y guárdalo en una página nueva" | Lee, resume y crea la página en *JARVIS* |
 | "¿Cuándo sale el próximo juego de…?" / "¿Cómo está el dólar hoy?" | Investiga con Gemini y te responde |
 | "Investiga los mejores audífonos de 1,500 pesos y guárdalo en Notion" | Investiga **y** guarda (combina expertos) |
+| "Pon mi playlist de Metallica" | La busca en tu Spotify y la reproduce (ver sección 7) |
 
 Por seguridad **no puede borrar nada** (no tiene esa herramienta).
 
@@ -154,7 +155,37 @@ El orbe es tu **Núcleo Lumen** en 3D (`frontend/js/lumen.js`, con Three.js r128
 - El modelo 3D sigue siempre la caja del elemento `#orbe`: para cambiar su tamaño o posición basta con editar `--tam-orbe` y `--orbe-y` en `css/styles.css`.
 - Si un navegador no tiene WebGL, aparece un núcleo sencillo hecho con CSS para que la app siga funcionando.
 
-## 7. Pruebas
+## 7. Spotify (requiere Premium)
+
+JARVIS busca tu playlist por su nombre y la reproduce en el dispositivo donde tengas Spotify abierto
+(celular, PC o bocina). También: *"pausa"*, *"siguiente"*, *"sube el volumen"*, *"pon aleatorio"*, *"¿qué está sonando?"*.
+
+**Configurarlo (una sola vez, ≈10 minutos):**
+
+1. Entra a https://developer.spotify.com/dashboard con tu cuenta Premium → **Create app**.
+2. Llena: **App name** `JARVIS`, **App description** `Asistente personal`, y en **Redirect URIs** agrega estas dos
+   (escríbelas exactas, cada una con **Add**):
+   - `https://TU-APP.onrender.com/spotify/callback` (con tu dirección real de Render)
+   - `http://127.0.0.1:8000/spotify/callback`
+   Si pregunta qué API usarás, marca **Web API**. Acepta los términos → **Save**.
+3. En **Settings** copia el **Client ID** y, con **View client secret**, el **Client secret**.
+4. Pégalos como `SPOTIFY_CLIENT_ID` y `SPOTIFY_CLIENT_SECRET` en tu `.env` y en Render (Environment).
+5. Abre JARVIS y dile *"pon mi playlist de Metallica"*. Aparecerá el botón **Conectar Spotify**: inicia sesión y acepta.
+6. Al terminar verás un código. Cópialo y guárdalo como `SPOTIFY_REFRESH_TOKEN` en Render y en tu `.env`
+   (así no tienes que volver a conectar cuando el servidor se reinicie).
+
+**Cómo funciona en el día a día:**
+- Si Spotify ya está abierto en algún dispositivo, la música empieza sola.
+- Si está cerrado, aparece el botón **Abrir Spotify**: tócalo y, en cuanto Spotify abra, empieza a sonar tu playlist.
+- Busca primero en tus playlists; si no encuentra una con ese nombre, busca en todo Spotify y te lo dice.
+
+**Si algo falla:**
+- *"Tu cuenta no está registrada en la app de Spotify"* → en el Dashboard abre tu app → **User Management** →
+  agrega tu nombre y el correo de tu cuenta de Spotify.
+- *"INVALID_CLIENT: Invalid redirect URI"* al conectar → la dirección de Render en el paso 2 no coincide exacta.
+- *"La conexión con Spotify expiró"* → vuelve a tocar **Conectar Spotify** y actualiza `SPOTIFY_REFRESH_TOKEN`.
+
+## 8. Pruebas
 
 ```bash
 cd backend
@@ -166,7 +197,7 @@ Prueban, sin conectarse a internet: cómo se leen las secciones de tu página de
 
 ---
 
-## 8. Problemas comunes
+## 9. Problemas comunes
 
 | Síntoma | Solución |
 |---|---|

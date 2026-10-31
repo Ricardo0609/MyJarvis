@@ -8,8 +8,10 @@ import mimetypes
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, Response
+from html import escape
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -17,6 +19,7 @@ from . import sesiones, voz
 from .cerebro import _explicar_error as explicar_error, procesar
 from .config import RAIZ, config
 from .notion import notion
+from .spotify import SpotifyError, spotify
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("jarvis")
@@ -41,6 +44,7 @@ async def ciclo_de_vida(_: FastAPI):
     yield
     tarea.cancel()
     await notion.cerrar()
+    await spotify.cerrar()
 
 
 app = FastAPI(title="JARVIS", lifespan=ciclo_de_vida, docs_url=None, redoc_url=None)
@@ -103,7 +107,8 @@ async def estado(x_clave: str = Header(default="")) -> dict:
     return {**base, "autorizado": True, "cerebro": config.orquestador_efectivo,
             "investigacion": config.investigacion_modo if config.gemini_api_key else "no configurada",
             "web_gratis": bool(config.tavily_api_key), "notion": notion.configurado,
-            "voz": {"motor": "gemini" if voz.disponible() else "navegador", "predeterminada": config.voz_gemini}}
+            "voz": {"motor": "gemini" if voz.disponible() else "navegador", "predeterminada": config.voz_gemini},
+            "spotify": "conectado" if spotify.conectado else "sin conectar" if spotify.configurado else "no configurado"}
 
 
 class PeticionVoz(BaseModel):
@@ -124,6 +129,68 @@ async def hablar(datos: PeticionVoz) -> Response:
         raise HTTPException(503, f"{explicar_error(error)} ({type(error).__name__}: {str(error)[:120]})") from error
     log.info("Voz generada en %.1f s (%s)", time.monotonic() - inicio, voz.voz_permitida(datos.voz))
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------------------
+# Spotify: conexión de la cuenta (una vez) y reintento al abrir la app
+# ---------------------------------------------------------------------------
+
+def _url_de_regreso(request: Request) -> str:
+    """Dirección a la que Spotify regresa después de iniciar sesión (debe estar registrada en tu app)."""
+    if config.spotify_redirect_uri:
+        return config.spotify_redirect_uri
+    protocolo = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    if host.split(":")[0] == "localhost":
+        host = host.replace("localhost", "127.0.0.1", 1)  # Spotify no acepta "localhost"
+    return f"{protocolo}://{host}/spotify/callback"
+
+
+@app.post("/api/spotify/enlace", dependencies=[Depends(verificar_clave)])
+async def spotify_enlace(request: Request) -> dict:
+    try:
+        return {"url": spotify.crear_enlace(_url_de_regreso(request)), "regreso": _url_de_regreso(request)}
+    except SpotifyError as error:
+        raise HTTPException(503, str(error)) from error
+
+
+@app.post("/api/spotify/reintentar", dependencies=[Depends(verificar_clave)])
+async def spotify_reintentar() -> dict:
+    try:
+        return await spotify.reintentar_pendiente()
+    except SpotifyError as error:
+        return {"ok": False, "motivo": str(error)}
+
+
+@app.get("/spotify/conectar")
+async def spotify_conectar() -> FileResponse:
+    return FileResponse(FRONTEND / "spotify.html", headers={"Cache-Control": "no-cache"})
+
+
+def _pagina(titulo: str, cuerpo: str) -> HTMLResponse:
+    html = f"""<!doctype html><html lang="es-MX"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>{escape(titulo)}</title><link rel="stylesheet" href="/css/spotify.css"></head>
+<body><main class="tarjeta"><h1>{escape(titulo)}</h1>{cuerpo}</main></body></html>"""
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/spotify/callback")
+async def spotify_callback(code: str = "", state: str = "", error: str = "") -> HTMLResponse:
+    if error:
+        motivo = "Cancelaste el permiso." if error == "access_denied" else f"Spotify respondió: {error}."
+        return _pagina("No se conectó Spotify", f"<p>{escape(motivo)}</p><a class='boton' href='/'>Volver a JARVIS</a>")
+    try:
+        codigo = await spotify.completar_conexion(code, state)
+    except SpotifyError as fallo:
+        return _pagina("No se conectó Spotify", f"<p>{escape(str(fallo))}</p><a class='boton' href='/'>Volver a JARVIS</a>")
+    cuerpo = f"""<p>Listo: JARVIS ya puede controlar tu música.</p>
+<p>Para que no se pierda cuando el servidor se reinicie, guarda este código como
+<b>SPOTIFY_REFRESH_TOKEN</b> en Render (Environment) y en tu <b>.env</b>. Es privado, como una contraseña.</p>
+<textarea id="codigo" readonly rows="4">{escape(codigo)}</textarea>
+<button class="boton" type="button" onclick="navigator.clipboard.writeText(document.getElementById('codigo').value).then(()=>this.textContent='Copiado')">Copiar código</button>
+<a class="boton boton--suave" href="/">Volver a JARVIS</a>"""
+    return _pagina("Spotify conectado", cuerpo)
 
 
 @app.get("/salud")

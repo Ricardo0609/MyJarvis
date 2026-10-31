@@ -43,6 +43,12 @@
       <p class="transcripcion" id="transcripcion" aria-live="polite"></p>
     </div>
 
+    <!-- Botón de acción: aparece cuando JARVIS necesita un toque tuyo (abrir o conectar Spotify) -->
+    <a class="accion" id="accion" href="/" rel="noopener" hidden>
+      <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
+      <span id="accion-texto"></span>
+    </a>
+
     <!-- Panel: aparece cuando pides ver algo -->
     <section class="panel" id="panel" aria-live="polite" hidden>
       <div class="panel__cabecera">

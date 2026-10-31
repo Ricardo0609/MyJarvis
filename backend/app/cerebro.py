@@ -12,6 +12,7 @@ from typing import Any
 from .config import config
 from .notion import notion
 from .prompts import prompt_sistema
+from .spotify import spotify
 from .tools import ejecutar, herramientas_claude, herramientas_gemini, resultado_como_texto
 
 log = logging.getLogger("jarvis.cerebro")
@@ -44,13 +45,26 @@ def _limpiar_mostrar(mostrar: Any) -> dict | None:
     return limpio
 
 
-def _respuesta(datos: dict[str, Any], usadas: list[str], cerebro: str) -> dict[str, Any]:
+def _respuesta(datos: dict[str, Any], usadas: list[str], cerebro: str,
+               abrir: dict | None = None) -> dict[str, Any]:
     voz = str(datos.get("voz") or "Listo.").strip()
-    return {"voz": voz, "mostrar": _limpiar_mostrar(datos.get("mostrar")), "herramientas": usadas, "cerebro": cerebro}
+    respuesta = {"voz": voz, "mostrar": _limpiar_mostrar(datos.get("mostrar")), "herramientas": usadas,
+                 "cerebro": cerebro}
+    if abrir:
+        respuesta["abrir"] = abrir
+    return respuesta
 
 
-async def _ejecutar_llamadas(llamadas: list[tuple[str, dict]]) -> list[dict]:
-    return list(await asyncio.gather(*(ejecutar(nombre, args) for nombre, args in llamadas)))
+async def _ejecutar_llamadas(llamadas: list[tuple[str, dict]], botones: list[dict]) -> list[dict]:
+    """Ejecuta las herramientas en paralelo. Si alguna pide un botón en pantalla (abrir o conectar
+    Spotify), se guarda aparte: el cerebro solo se entera de que el botón ya está visible."""
+    resultados = list(await asyncio.gather(*(ejecutar(nombre, args) for nombre, args in llamadas)))
+    for resultado in resultados:
+        boton = resultado.pop("_abrir", None)
+        if boton:
+            botones.append(boton)
+            resultado["boton_en_pantalla"] = boton["texto"]
+    return resultados
 
 
 AVISO_RESPONDER = ("No se envió la respuesta: algunas herramientas devolvieron error. Revisa los resultados "
@@ -64,6 +78,7 @@ AVISO_RESPONDER = ("No se envió la respuesta: algunas herramientas devolvieron 
 async def con_claude(texto: str, historial: list[dict], sistema: str) -> dict[str, Any]:
     mensajes: list[dict] = historial + [{"role": "user", "content": texto}]
     usadas: list[str] = []
+    botones: list[dict] = []
     for _ in range(MAX_PASOS):
         r = await cliente_claude().messages.create(
             model=config.modelo_claude, max_tokens=2048, system=sistema,
@@ -75,13 +90,13 @@ async def con_claude(texto: str, historial: list[dict], sistema: str) -> dict[st
 
         if not llamadas:
             texto_final = "".join(b.text for b in r.content if b.type == "text").strip()
-            return _respuesta({"voz": texto_final or "Listo."}, usadas, "claude")
+            return _respuesta({"voz": texto_final or "Listo."}, usadas, "claude", botones[-1] if botones else None)
 
-        resultados = await _ejecutar_llamadas([(b.name, b.input) for b in otras])
+        resultados = await _ejecutar_llamadas([(b.name, b.input) for b in otras], botones)
         usadas += [b.name for b in otras]
         hubo_error = any("error" in res for res in resultados)
         if final and not hubo_error:
-            return _respuesta(final.input, usadas, "claude")
+            return _respuesta(final.input, usadas, "claude", botones[-1] if botones else None)
 
         bloques = [{"type": "tool_result", "tool_use_id": b.id, "content": resultado_como_texto(res),
                     **({"is_error": True} if "error" in res else {})} for b, res in zip(otras, resultados)]
@@ -107,6 +122,7 @@ async def con_gemini(texto: str, historial: list[dict], sistema: str) -> dict[st
     ajustes = dict(system_instruction=sistema, tools=herramientas_gemini(),
                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
     usadas: list[str] = []
+    botones: list[dict] = []
     modelo = config.modelo_gemini_orquestador
     for _ in range(MAX_PASOS):
         # Si el modelo principal está saturado se usa uno de respaldo, y se mantiene el resto de la orden.
@@ -119,13 +135,13 @@ async def con_gemini(texto: str, historial: list[dict], sistema: str) -> dict[st
         otras = [c for c in llamadas if c.name != "responder"]
 
         if not llamadas:
-            return _respuesta({"voz": (r.text or "Listo.").strip()}, usadas, "gemini")
+            return _respuesta({"voz": (r.text or "Listo.").strip()}, usadas, "gemini", botones[-1] if botones else None)
 
-        resultados = await _ejecutar_llamadas([(c.name, dict(c.args or {})) for c in otras])
+        resultados = await _ejecutar_llamadas([(c.name, dict(c.args or {})) for c in otras], botones)
         usadas += [c.name for c in otras]
         hubo_error = any("error" in res for res in resultados)
         if final and not hubo_error:
-            return _respuesta(dict(final.args or {}), usadas, "gemini")
+            return _respuesta(dict(final.args or {}), usadas, "gemini", botones[-1] if botones else None)
 
         partes = [types.Part(function_response=types.FunctionResponse(id=c.id, name=c.name, response=res))
                   for c, res in zip(otras, resultados)]
@@ -141,7 +157,8 @@ async def con_gemini(texto: str, historial: list[dict], sistema: str) -> dict[st
 # ---------------------------------------------------------------------------
 
 async def procesar(texto: str, historial: list[dict]) -> dict[str, Any]:
-    sistema = prompt_sistema(notion.titulos_en_cache(), notion.tipos_evento_en_cache(), notion.configurado)
+    sistema = prompt_sistema(notion.titulos_en_cache(), notion.tipos_evento_en_cache(), notion.configurado,
+                             spotify.configurado)
     cerebro = config.orquestador_efectivo
     if cerebro == "ninguno":
         return _respuesta({"voz": "No tengo cerebro conectado: falta configurar la llave de Claude o de Gemini."},

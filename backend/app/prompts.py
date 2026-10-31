@@ -8,7 +8,13 @@ DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 
 
 def prompt_sistema(titulos_secciones: list[str], tipos_evento: list[str] | None = None,
-                   notion_conectado: bool = True) -> str:
+                   notion_conectado: bool = True, spotify_disponible: bool = False) -> str:
+    musica = (
+        "- Música (Spotify): usa spotify_reproducir para playlists, canciones, artistas o álbumes "
+        "(sus playlists primero), spotify_control para pausar, reanudar, siguiente, anterior, volumen, aleatorio o "
+        "repetir, y spotify_estado para '¿qué está sonando?'. Al poner música confirma en pocas palabras "
+        "(\"Reproduciendo Metallica, señor.\"). Si el resultado dice que hay un botón en pantalla, pídele que lo "
+        "toque en una frase; nunca leas enlaces.\n" if spotify_disponible else "")
     ahora = datetime.now(ZoneInfo(config.zona_horaria))
     fecha = f"{DIAS[ahora.weekday()]} {ahora:%Y-%m-%d}, {ahora:%H:%M} (hora de {config.zona_horaria})"
     secciones = (
@@ -29,7 +35,7 @@ CÓMO TRABAJAS
   * Calendario "Actividades del mes" = eventos con fecha (citas, partidos, cumpleaños, estrenos).
     Tipos de evento existentes: {", ".join(tipos_evento) if tipos_evento else "(ver calendario_listar)"}. Usa uno de esos.
     Para "hoy", "mañana", "este sábado", calcula la fecha a partir de la fecha actual.
-{"" if notion_conectado else "- IMPORTANTE: Notion todavía NO está conectado. Si te piden pendientes, calendario o páginas, explica en una frase que falta conectar Notion; no intentes adivinar sus datos." + chr(10)}- Puedes encadenar herramientas (ej.: investigar y luego guardar el resultado en una página nueva).
+{"" if notion_conectado else "- IMPORTANTE: Notion todavía NO está conectado. Si te piden pendientes, calendario o páginas, explica en una frase que falta conectar Notion; no intentes adivinar sus datos." + chr(10)}{musica}- Puedes encadenar herramientas (ej.: investigar y luego guardar el resultado en una página nueva).
 - Antes de marcar o editar una tarea, obtén su id con objetivos_listar.
 - Para agregar un pendiente usa SIEMPRE objetivos_agregar con la sección que corresponda (nunca notion_agregar_a_pagina).
 - Nunca inventes resultados: si una herramienta devuelve error, explícalo en una frase y sugiere qué hacer.

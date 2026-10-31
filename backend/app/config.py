@@ -65,6 +65,12 @@ class Config:
     notion_calendario_ds_id: str
     notion_notas_padre_id: str
 
+    # Spotify (requiere Premium)
+    spotify_client_id: str
+    spotify_client_secret: str
+    spotify_refresh_token: str
+    spotify_redirect_uri: str
+
     @property
     def orquestador_efectivo(self) -> str:
         """Si eliges Claude pero no hay llave, cae a Gemini (gratis) para no dejarte sin asistente."""
@@ -105,6 +111,10 @@ def cargar_config() -> Config:
         notion_calendario_db_id=_limpiar_id(_env("NOTION_CALENDARIO_DATABASE_ID", "b7b1b527efef42929021415ecbc00347")),
         notion_calendario_ds_id=_env("NOTION_CALENDARIO_DATA_SOURCE_ID"),
         notion_notas_padre_id=_limpiar_id(_env("NOTION_NOTAS_PADRE_ID", "40a7aa605b5b81e585e0d43c39b8f57d")),
+        spotify_client_id=_env("SPOTIFY_CLIENT_ID"),
+        spotify_client_secret=_env("SPOTIFY_CLIENT_SECRET"),
+        spotify_refresh_token=_env("SPOTIFY_REFRESH_TOKEN"),
+        spotify_redirect_uri=_env("SPOTIFY_REDIRECT_URI"),  # opcional: se calcula solo
     )
 
 

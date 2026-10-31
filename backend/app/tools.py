@@ -9,6 +9,7 @@ from typing import Any
 from .config import config
 from .notion import NotionError, notion
 from .research import investigar
+from .spotify import SpotifyError, spotify
 
 log = logging.getLogger("jarvis.tools")
 
@@ -123,6 +124,35 @@ HERRAMIENTAS: list[dict[str, Any]] = [
             "pregunta": {"type": "string", "description": "Pregunta completa y autocontenida, con contexto."},
         }, "required": ["pregunta"]},
     },
+    {
+        "name": "spotify_reproducir",
+        "description": (
+            "Pone música en Spotify. Para playlists busca primero en las playlists del usuario ('mi playlist de "
+            "Metallica' → consulta 'Metallica') y si no la encuentra, en todo Spotify. Reproduce en el dispositivo "
+            "donde tenga Spotify abierto. Si Spotify está cerrado, aparece un botón en pantalla para abrirlo."),
+        "parameters": {**_OBJ, "properties": {
+            "consulta": {"type": "string", "description": "Nombre de la playlist, canción, artista o álbum (sin 'mi', 'playlist', etc.)."},
+            "tipo": {"type": "string", "enum": ["playlist", "cancion", "artista", "album"],
+                     "description": "Por defecto playlist. Usa artista si pide 'pon Metallica' sin decir playlist."},
+            "aleatorio": {"type": "boolean", "description": "Opcional: true si pidió reproducir en aleatorio."},
+        }, "required": ["consulta"]},
+    },
+    {
+        "name": "spotify_control",
+        "description": "Controla la música que está sonando en Spotify.",
+        "parameters": {**_OBJ, "properties": {
+            "accion": {"type": "string",
+                       "enum": ["pausa", "reanudar", "siguiente", "anterior", "volumen", "aleatorio", "repetir"]},
+            "valor": {"type": "string", "description": (
+                "volumen: '0'-'100', '+15', '-15', 'subir' o 'bajar'. aleatorio: 'si' o 'no'. "
+                "repetir: 'cancion', 'playlist' o 'no'.")},
+        }, "required": ["accion"]},
+    },
+    {
+        "name": "spotify_estado",
+        "description": "Dice qué canción está sonando en Spotify, en qué dispositivo y a qué volumen.",
+        "parameters": {**_OBJ, "properties": {}},
+    },
 ]
 
 RESPONDER: dict[str, Any] = {
@@ -167,6 +197,8 @@ def herramientas_disponibles() -> list[dict[str, Any]]:
         if nombre.startswith("calendario_") and not (config.notion_calendario_db_id or config.notion_calendario_ds_id):
             continue
         if nombre == "investigar" and not (config.gemini_api_key or config.tavily_api_key):
+            continue
+        if nombre.startswith("spotify_") and not spotify.configurado:
             continue
         disponibles.append(h)
     return disponibles
@@ -223,9 +255,21 @@ async def ejecutar(nombre: str, args: dict[str, Any]) -> dict[str, Any]:
             return await notion.agregar_a_pagina(args["pagina_id"], args["contenido_markdown"])
         if nombre == "investigar":
             return await investigar(args["pregunta"])
+        if nombre == "spotify_reproducir":
+            return await spotify.reproducir(args["consulta"], args.get("tipo") or "playlist", args.get("aleatorio"))
+        if nombre == "spotify_control":
+            return await spotify.controlar(args["accion"], args.get("valor"))
+        if nombre == "spotify_estado":
+            return await spotify.estado()
         return {"error": f"Herramienta desconocida: {nombre}"}
     except KeyError as faltante:
         return {"error": f"Falta el parámetro {faltante} para {nombre}."}
+    except SpotifyError as error:
+        log.warning("Spotify: %s", error)
+        resultado: dict[str, Any] = {"error": str(error)}
+        if error.abrir:
+            resultado["_abrir"] = error.abrir
+        return resultado
     except NotionError as error:
         log.warning("Herramienta %s devolvió error: %s", nombre, error)
         return {"error": str(error)}

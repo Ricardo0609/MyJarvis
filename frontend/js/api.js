@@ -82,4 +82,5 @@ export const api = {
   estado: () => pedir("/api/estado", { tiempoMax: 70000 }),
   comando: (texto) => pedir("/api/comando", { metodo: "POST", cuerpo: { texto, sesion: sesionId() } }),
   olvidar: () => pedir("/api/olvidar", { metodo: "POST", cuerpo: { sesion: sesionId() } }),
+  spotifyReintentar: () => pedir("/api/spotify/reintentar", { metodo: "POST", tiempoMax: 15000 }),
 };

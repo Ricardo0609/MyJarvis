@@ -111,6 +111,27 @@ async def probar_voz():
         mostrar(f"Voz de Gemini ({config.voz_gemini})", False, error_corto(error))
 
 
+async def probar_spotify():
+    from app.spotify import spotify
+    if not spotify.configurado:
+        print("[ --  ] Spotify: sin configurar (faltan SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET)")
+        return
+    if not spotify.conectado:
+        mostrar("Spotify: cuenta conectada", False,
+                "Falta SPOTIFY_REFRESH_TOKEN: en la app toca «Conectar Spotify» (o pídele música a JARVIS)")
+        return
+    try:
+        playlists = await spotify.mis_playlists()
+        mostrar("Spotify: cuenta conectada", True, f"{len(playlists)} playlists: "
+                + "; ".join(p["nombre"][:25] for p in playlists[:6]))
+        datos = await spotify._pedir("GET", "/me/player/devices") or {}
+        nombres = [f"{d.get('name')} ({d.get('type')})" for d in datos.get("devices") or []]
+        print(f"         Dispositivos con Spotify abierto: {', '.join(nombres) or 'ninguno (abre Spotify para probar)'}")
+    except Exception as error:  # noqa: BLE001
+        mostrar("Spotify: cuenta conectada", False, error_corto(error))
+    await spotify.cerrar()
+
+
 async def probar_tavily():
     if not config.tavily_api_key:
         mostrar("Tavily (búsqueda web)", False, "TAVILY_API_KEY está vacía en el .env")
@@ -170,6 +191,7 @@ async def main():
     await probar_tavily()
     await probar_claude()
     await probar_notion()
+    await probar_spotify()
     print("=" * 60)
     fallas = [n for n, ok in resultados if not ok]
     print("Todo bien." if not fallas else f"{len(fallas)} prueba(s) fallaron. Copia todo este texto y mándaselo a Claude.")

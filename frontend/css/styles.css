@@ -404,6 +404,37 @@ body[data-estado="pensando"] .microfono { opacity: 0.55; }
   cursor: pointer;
 }
 
+/* Botón de acción (abrir o conectar Spotify): justo arriba de los controles */
+.accion {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--alto-controles) + var(--abajo) + 10px);
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid var(--primario);
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 24px rgba(255, 138, 31, 0.25);
+  color: var(--tinta);
+  font-family: var(--fuente-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.accion[hidden] { display: none; }
+.accion .material-symbols-rounded { font-size: 17px; color: var(--primario); }
+.accion:hover { box-shadow: 0 0 32px rgba(255, 138, 31, 0.45); }
+body.con-accion .leyendas,
+body.con-accion .panel { bottom: calc(var(--alto-controles) + var(--abajo) + 64px); }
+
 /* Capa para activar el audio con un toque (regla de los navegadores) */
 .activar {
   position: fixed;

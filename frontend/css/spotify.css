@@ -1,0 +1,65 @@
+/* Páginas de conexión con Spotify (misma paleta que JARVIS) */
+:root {
+  color-scheme: dark;
+  --fondo: #0b0602;
+  --panel: #1a0e04;
+  --tinta: #fff3e6;
+  --tinta-2: #c4a081;
+  --primario: #ff8a1f;
+  --linea: rgba(255, 138, 31, 0.28);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: radial-gradient(60% 50% at 50% 40%, rgba(255, 138, 31, 0.12), transparent 70%), var(--fondo);
+  color: var(--tinta);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+.tarjeta {
+  width: min(100%, 460px);
+  padding: 28px 24px;
+  border: 1px solid var(--linea);
+  background: var(--panel);
+  display: grid;
+  gap: 14px;
+}
+h1 {
+  margin: 0;
+  font-family: "Michroma", "Eurostile", sans-serif;
+  font-weight: 400;
+  font-size: 17px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+p { margin: 0; color: var(--tinta-2); line-height: 1.55; }
+b { color: var(--tinta); font-weight: 600; }
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--linea);
+  background: var(--fondo);
+  color: var(--tinta);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  resize: none;
+  word-break: break-all;
+}
+.boton {
+  display: block;
+  padding: 12px;
+  border: 0;
+  background: var(--primario);
+  color: var(--fondo);
+  font: 500 13px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.boton--suave { background: transparent; color: var(--tinta); border: 1px solid var(--linea); }
+.error { color: #ffb08a; }
