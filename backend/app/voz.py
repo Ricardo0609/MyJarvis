@@ -13,12 +13,32 @@ import time
 from collections import OrderedDict
 
 from .config import config
-from .research import _conviene_cambiar
+from .research import VERSION_API_GEMINI, _conviene_cambiar
 
-# Segundos máximos por intento (el primer modelo tiene un poco más). En total quedan por debajo
-# de los 30 s que espera la página.
-LIMITES_SEGUNDOS = (10.0, 7.0, 7.0)
+# Segundos máximos por intento (el primero tiene más: tras despertar el servidor tarda un poco).
+# En total quedan por debajo de los 30 s que espera la página.
+LIMITES_SEGUNDOS = (13.0, 10.0, 5.0)
 _cliente_tts = None
+_no_disponibles: set[str] = set()  # modelos que tu llave no tiene (404): no se vuelven a intentar
+
+
+class ErrorVoz(Exception):
+    """Ningún modelo de voz pudo generar el audio. El mensaje dice qué pasó con cada uno."""
+
+
+def motivo(error: Exception) -> str:
+    texto = f"{type(error).__name__} {error}".lower()
+    if "429" in texto or "resource_exhausted" in texto or "quota" in texto:
+        return "se acabó su límite gratis de hoy"
+    if "503" in texto or "unavailable" in texto or "overloaded" in texto or "high demand" in texto:
+        return "está saturado"
+    if "404" in texto or "not_found" in texto or "not found" in texto:
+        return "no está disponible para tu llave"
+    if "401" in texto or "403" in texto or "permission" in texto or "api key" in texto:
+        return "la llave no tiene permiso"
+    if "500" in texto or "internal" in texto:
+        return "falla interna de Google"
+    return f"{type(error).__name__}: {str(error)[:100]}"
 
 
 def cliente_tts():
@@ -30,7 +50,8 @@ def cliente_tts():
         from google.genai import types
         _cliente_tts = genai.Client(
             api_key=config.gemini_api_key,
-            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)))
+            http_options=types.HttpOptions(api_version=VERSION_API_GEMINI,
+                                           retry_options=types.HttpRetryOptions(attempts=1)))
     return _cliente_tts
 
 log = logging.getLogger("jarvis.voz")
@@ -110,26 +131,29 @@ async def sintetizar(texto: str, voz: str | None = None) -> bytes:
         _cache.move_to_end(clave)
         return _cache[clave]
 
-    ultimo_error: Exception | None = None
-    modelos = (config.modelo_tts, *[m for m in config.modelos_tts_respaldo if m != config.modelo_tts])
+    errores: list[str] = []
+    modelos = [m for m in dict.fromkeys((config.modelo_tts, *config.modelos_tts_respaldo))
+               if m and m not in _no_disponibles] or [config.modelo_tts]
     for posicion, modelo in enumerate(modelos):
         limite = LIMITES_SEGUNDOS[min(posicion, len(LIMITES_SEGUNDOS) - 1)]
         inicio = time.monotonic()
         try:
             audio = await asyncio.wait_for(_generar(modelo, texto, voz, limite), timeout=limite)
         except asyncio.TimeoutError:
-            ultimo_error = TimeoutError(f"el modelo de voz {modelo} tardó más de {limite:.0f} s")
+            errores.append(f"{modelo} tardó más de {limite:.0f} s")
             log.warning("TTS '%s' tardó más de %.0f s; pruebo otro modelo", modelo, limite)
             continue
         except Exception as error:  # noqa: BLE001
-            ultimo_error = error
+            errores.append(f"{modelo}: {motivo(error)}")
+            log.warning("TTS '%s' falló (%s)", modelo, str(error)[:200])
+            if motivo(error) == "no está disponible para tu llave":
+                _no_disponibles.add(modelo)
             if not _conviene_cambiar(error):
                 break
-            log.warning("TTS '%s' no disponible (%s); pruebo otro modelo", modelo, str(error)[:120])
             continue
         log.info("Voz generada con %s en %.1f s", modelo, time.monotonic() - inicio)
         _cache[clave] = audio
         while len(_cache) > _MAX_CACHE:
             _cache.popitem(last=False)
         return audio
-    raise ultimo_error or RuntimeError("Sin modelos de voz")
+    raise ErrorVoz("; ".join(errores) or "no hay modelos de voz configurados")

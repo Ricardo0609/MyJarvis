@@ -250,8 +250,42 @@ def test_voz_todas_lentas_da_error_claro(monkeypatch):
     monkeypatch.setattr(voz, "_generar", generar_lento)
     monkeypatch.setattr(voz, "LIMITES_SEGUNDOS", (0.05, 0.05, 0.05))
     voz._cache.clear()
-    with pytest.raises(TimeoutError, match="tardó más de"):
+    with pytest.raises(voz.ErrorVoz, match="gemini-3.8-flash-lite-tts tardó más de"):
         asyncio.run(voz.sintetizar("Otra frase"))
+
+
+def test_voz_explica_que_paso_con_cada_modelo_y_salta_los_que_no_existen(monkeypatch):
+    import pytest
+    from app import voz
+
+    usados = []
+
+    async def generar(modelo, texto, nombre, limite):
+        usados.append(modelo)
+        if modelo == "gemini-3.8-flash-lite-tts":
+            raise RuntimeError("429 RESOURCE_EXHAUSTED quota")
+        raise RuntimeError(f"Error code: 404 - Model '{modelo}' not found")
+
+    monkeypatch.setattr(voz, "_generar", generar)
+    monkeypatch.setattr(voz, "_no_disponibles", set())
+    voz._cache.clear()
+    with pytest.raises(voz.ErrorVoz) as error:
+        asyncio.run(voz.sintetizar("Frase uno"))
+    assert "gemini-3.8-flash-lite-tts: se acabó su límite gratis de hoy" in str(error.value)
+    assert "gemini-3.8-flash-tts: no está disponible para tu llave" in str(error.value)
+    usados.clear()
+    with pytest.raises(voz.ErrorVoz):
+        asyncio.run(voz.sintetizar("Frase dos"))
+    assert usados == ["gemini-3.8-flash-lite-tts"]  # el que no existe ya no se intenta
+
+    async def sintetizar_agotada(texto, nombre=None):
+        raise voz.ErrorVoz("gemini-3.8-flash-lite-tts: se acabó su límite gratis de hoy")
+
+    import app.main as main  # noqa: F401
+    monkeypatch.setattr(voz, "sintetizar", sintetizar_agotada)
+    with TestClient(app) as cliente:
+        r = cliente.post("/api/voz", json={"texto": "hola"}, headers={"X-Clave": "secreto"})
+    assert r.status_code == 503 and r.json()["detail"].startswith("ningún modelo de voz respondió (gemini-3.8")
 
 
 def test_archivos_de_la_pagina_siempre_se_revalidan():
@@ -261,3 +295,13 @@ def test_archivos_de_la_pagina_siempre_se_revalidan():
             assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", ruta
         etag = cliente.get("/js/app.js").headers["etag"]
         assert cliente.get("/js/app.js", headers={"If-None-Match": etag}).status_code == 304
+
+
+def test_gemini_usa_la_api_v1beta(monkeypatch):
+    """google-genai 3.0 cambió el valor por defecto a v1 (sin los modelos de voz): debe quedar fijo en v1beta."""
+    from app import research, voz
+
+    monkeypatch.setattr(research, "_cliente_gemini", None)
+    monkeypatch.setattr(voz, "_cliente_tts", None)
+    assert research.gemini()._api_client._http_options.api_version == "v1beta"
+    assert voz.cliente_tts()._api_client._http_options.api_version == "v1beta"

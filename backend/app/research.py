@@ -25,11 +25,18 @@ _SENALES_CAMBIAR = ("503", "unavailable", "high demand", "overloaded", "429", "r
                     "500", "internal", "404", "not_found", "not found", "timeout", "timed out")
 
 
+# Versión de la API de Gemini. La librería google-genai 3.0 cambió su valor por defecto a "v1", donde no
+# existen los modelos de voz ni varias funciones que usa JARVIS: por eso se fija aquí explícitamente.
+VERSION_API_GEMINI = "v1beta"
+
+
 def gemini():
     global _cliente_gemini
     if _cliente_gemini is None:
         from google import genai
-        _cliente_gemini = genai.Client(api_key=config.gemini_api_key)
+        from google.genai import types
+        _cliente_gemini = genai.Client(api_key=config.gemini_api_key,
+                                       http_options=types.HttpOptions(api_version=VERSION_API_GEMINI))
     return _cliente_gemini
 
 

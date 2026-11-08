@@ -31,8 +31,12 @@ def main():
         print("Falta GEMINI_API_KEY en tu .env")
         return
     from google import genai
+    from google.genai import types
 
-    cliente = genai.Client(api_key=config.gemini_api_key)
+    from app.research import VERSION_API_GEMINI
+
+    cliente = genai.Client(api_key=config.gemini_api_key,
+                           http_options=types.HttpOptions(api_version=VERSION_API_GEMINI))
     print("Diseñando la voz (tarda unos segundos)...")
     try:
         voz = cliente.voices.create(

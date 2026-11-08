@@ -139,6 +139,9 @@ async def hablar(datos: PeticionVoz) -> Response:
     inicio = time.monotonic()
     try:
         audio = await voz.sintetizar(datos.texto, datos.voz)
+    except voz.ErrorVoz as error:
+        log.warning("No se pudo generar la voz: %s", error)
+        raise HTTPException(503, f"ningún modelo de voz respondió ({str(error)[:300]})") from error
     except Exception as error:  # noqa: BLE001
         log.warning("No se pudo generar la voz: %s", str(error)[:300])
         raise HTTPException(503, f"{explicar_error(error)} ({type(error).__name__}: {str(error)[:120]})") from error
