@@ -132,6 +132,59 @@ async def probar_spotify():
     await spotify.cerrar()
 
 
+async def probar_chatgpt():
+    if not config.openai_api_key:
+        print("[ --  ] ChatGPT: sin OPENAI_API_KEY (Gemini analiza archivos y arma guías mientras tanto; "
+              "crear imágenes necesita la llave)")
+        return
+    from app.chatgpt import cliente, explicar_error_openai
+    try:
+        r = await cliente().responses.create(model=config.modelo_chatgpt, input="Responde solo: hola",
+                                             max_output_tokens=20)
+        mostrar(f"ChatGPT '{config.modelo_chatgpt}'", True, f"Respondió: {(r.output_text or '').strip()[:60]}")
+    except Exception as error:  # noqa: BLE001
+        mostrar(f"ChatGPT '{config.modelo_chatgpt}'", False, f"{explicar_error_openai(error)} | {error_corto(error)}")
+    print(f"         Imágenes: {config.modelo_imagen}, calidad {config.calidad_imagen} "
+          "(no se prueba aquí para no gastar saldo; pídele una a JARVIS)")
+
+
+async def probar_google():
+    from app.cuenta_google import GoogleError, google
+    if not google.configurado:
+        print("[ --  ] Google: sin configurar (faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET)")
+        return
+    if not google.conectado:
+        mostrar("Google: cuenta conectada", False,
+                "Falta GOOGLE_REFRESH_TOKEN: en la app abre /google/conectar (o pídele tus correos a JARVIS)")
+        return
+    pruebas = [("Gmail", google.gmail_buscar("in:inbox", 1)),
+               ("Google Calendar", google.calendario_listar("2026-01-01", "2026-12-31")),
+               ("Google Drive", google.drive_buscar("a"))]
+    for nombre, prueba in pruebas:
+        try:
+            r = await prueba
+            cuantos = len(r.get("correos") or r.get("eventos") or r.get("archivos") or [])
+            mostrar(f"Google: {nombre}", True, f"{cuantos} elemento(s) leídos")
+        except GoogleError as error:
+            mostrar(f"Google: {nombre}", False, str(error))
+        except Exception as error:  # noqa: BLE001
+            mostrar(f"Google: {nombre}", False, error_corto(error))
+    await google.cerrar()
+
+
+async def probar_youtube():
+    if not config.youtube_api_key:
+        print("[ --  ] YouTube: sin YOUTUBE_API_KEY (los videos se buscan con Tavily)")
+        return
+    from app.videos import _con_youtube
+    try:
+        r = await _con_youtube("tutorial arduino", 1)
+        mostrar("YouTube", bool(r), f"Primer video: {r[0]['titulo'][:60]}" if r else "Sin resultados")
+    except Exception as error:  # noqa: BLE001
+        detalle = getattr(getattr(error, "response", None), "text", "") or str(error)
+        mostrar("YouTube", False, error_corto(Exception(detalle[:300])))
+
+
 async def probar_tavily():
     if not config.tavily_api_key:
         mostrar("Tavily (búsqueda web)", False, "TAVILY_API_KEY está vacía en el .env")
@@ -185,6 +238,8 @@ async def main():
     print(f"TAVILY_API_KEY: {llave(config.tavily_api_key)}")
     print(f"ANTHROPIC_API_KEY: {llave(config.anthropic_api_key)}")
     print(f"NOTION_TOKEN: {llave(config.notion_token)}")
+    print(f"OPENAI_API_KEY: {llave(config.openai_api_key)}")
+    print(f"GOOGLE_CLIENT_ID: {llave(config.google_client_id)} | YOUTUBE_API_KEY: {llave(config.youtube_api_key)}")
     print("=" * 60)
     await probar_gemini()
     await probar_voz()
@@ -192,6 +247,9 @@ async def main():
     await probar_claude()
     await probar_notion()
     await probar_spotify()
+    await probar_chatgpt()
+    await probar_google()
+    await probar_youtube()
     print("=" * 60)
     fallas = [n for n, ok in resultados if not ok]
     print("Todo bien." if not fallas else f"{len(fallas)} prueba(s) fallaron. Copia todo este texto y mándaselo a Claude.")

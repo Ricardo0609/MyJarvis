@@ -1,4 +1,4 @@
-"""Servidor de JARVIS: sirve la página (frontend) y la API que habla con Claude, Gemini y Notion."""
+"""Servidor de JARVIS: sirve la página (frontend) y la API que reparte el trabajo entre Claude, Gemini y ChatGPT."""
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +9,7 @@ import time
 from contextlib import asynccontextmanager
 
 from html import escape
+from urllib.parse import quote, unquote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -16,8 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import sesiones, voz
+from .archivos import IMAGENES_SEGURAS, MAX_BYTES_ARCHIVO, ArchivoError, almacen
 from .cerebro import _explicar_error as explicar_error, procesar
 from .config import RAIZ, config
+from .cuenta_google import GoogleError, google
 from .notion import notion
 from .spotify import SpotifyError, spotify
 
@@ -45,6 +48,7 @@ async def ciclo_de_vida(_: FastAPI):
     tarea.cancel()
     await notion.cerrar()
     await spotify.cerrar()
+    await google.cerrar()
 
 
 app = FastAPI(title="JARVIS", lifespan=ciclo_de_vida, docs_url=None, redoc_url=None)
@@ -62,6 +66,7 @@ def verificar_clave(x_clave: str = Header(default="")) -> None:
 class Comando(BaseModel):
     texto: str = Field(min_length=1, max_length=2000)
     sesion: str = Field(default="principal", max_length=64)
+    archivos: list[str] = Field(default_factory=list, max_length=8)
 
 
 class Sesion(BaseModel):
@@ -72,9 +77,16 @@ class Sesion(BaseModel):
 async def comando(datos: Comando) -> dict:
     texto = datos.texto.strip()
     inicio = time.monotonic()
-    log.info("Orden recibida: %s", texto[:120])
+    nuevos = [a.resumen() for a in almacen.varios(datos.archivos)]
+    if nuevos:
+        sesiones.agregar_archivos(datos.sesion, nuevos)
+        texto += "\n\n[Adjuntó ahora: " + "; ".join(f"{a['nombre']} (archivo_id={a['archivo_id']})" for a in nuevos) + "]"
+    else:
+        sesiones.tocar_archivos(datos.sesion)
+    vigentes = [a for a in sesiones.archivos(datos.sesion) if almacen.obtener(a["archivo_id"])]
+    log.info("Orden recibida: %s", texto[:160])
     try:
-        respuesta = await procesar(texto, sesiones.historial(datos.sesion))
+        respuesta = await procesar(texto, sesiones.historial(datos.sesion), vigentes)
     except Exception as error:  # noqa: BLE001 — nunca dejamos la página esperando sin respuesta
         log.exception("Error procesando la orden")
         respuesta = {"voz": "Tuve un problema interno procesando eso, señor. Revise la terminal del servidor.",
@@ -108,7 +120,10 @@ async def estado(x_clave: str = Header(default="")) -> dict:
             "investigacion": config.investigacion_modo if config.gemini_api_key else "no configurada",
             "web_gratis": bool(config.tavily_api_key), "notion": notion.configurado,
             "voz": {"motor": "gemini" if voz.disponible() else "navegador", "predeterminada": config.voz_gemini},
-            "spotify": "conectado" if spotify.conectado else "sin conectar" if spotify.configurado else "no configurado"}
+            "spotify": "conectado" if spotify.conectado else "sin conectar" if spotify.configurado else "no configurado",
+            "chatgpt": "conectado" if config.openai_api_key else "sin llave (Gemini lo cubre)",
+            "google": "conectado" if google.conectado else "sin conectar" if google.configurado else "no configurado",
+            "youtube": bool(config.youtube_api_key)}
 
 
 class PeticionVoz(BaseModel):
@@ -132,24 +147,63 @@ async def hablar(datos: PeticionVoz) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Spotify: conexión de la cuenta (una vez) y reintento al abrir la app
+# Archivos: subir (PDF, Word, Excel, fotos) y ver/descargar (incluye las imágenes que crea ChatGPT)
 # ---------------------------------------------------------------------------
 
-def _url_de_regreso(request: Request) -> str:
-    """Dirección a la que Spotify regresa después de iniciar sesión (debe estar registrada en tu app)."""
-    if config.spotify_redirect_uri:
-        return config.spotify_redirect_uri
+@app.post("/api/archivo", dependencies=[Depends(verificar_clave)])
+async def subir_archivo(request: Request, x_nombre: str = Header(default="archivo")) -> dict:
+    """Recibe el archivo tal cual (sin formularios) con su nombre en la cabecera X-Nombre."""
+    if int(request.headers.get("content-length") or 0) > MAX_BYTES_ARCHIVO:
+        raise HTTPException(413, "El archivo pesa más de 20 MB.")
+    datos = bytearray()
+    async for trozo in request.stream():
+        datos += trozo
+        if len(datos) > MAX_BYTES_ARCHIVO:
+            raise HTTPException(413, "El archivo pesa más de 20 MB.")
+    try:
+        archivo = almacen.guardar(unquote(x_nombre), bytes(datos), request.headers.get("content-type", ""))
+    except ArchivoError as error:
+        raise HTTPException(400, str(error)) from error
+    log.info("Archivo recibido: %s (%s, %d KB)", archivo.nombre, archivo.tipo, len(archivo.datos) // 1024)
+    return {"id": archivo.id, "nombre": archivo.nombre, "tipo": archivo.tipo, "kb": len(archivo.datos) // 1024}
+
+
+@app.get("/api/archivo/{archivo_id}")
+async def ver_archivo(archivo_id: str, descargar: bool = False) -> Response:
+    """El id es imposible de adivinar (funciona como contraseña del archivo). Solo las fotos se muestran
+    dentro de la página; todo lo demás se descarga, para que ningún archivo pueda ejecutar código aquí."""
+    archivo = almacen.obtener(archivo_id)
+    if not archivo:
+        raise HTTPException(404, "Ese archivo ya expiró (duran 3 horas).")
+    en_linea = archivo.tipo in IMAGENES_SEGURAS and not descargar
+    disposicion = "inline" if en_linea else "attachment"
+    return Response(archivo.datos, media_type=archivo.tipo if en_linea else "application/octet-stream", headers={
+        "Content-Disposition": f"{disposicion}; filename*=UTF-8''{quote(archivo.nombre)}",
+        "Cache-Control": "private, max-age=10800", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox", "Referrer-Policy": "no-referrer"})
+
+
+# ---------------------------------------------------------------------------
+# Spotify y Google: conexión de la cuenta (una vez)
+# ---------------------------------------------------------------------------
+
+def _url_de_regreso(request: Request, servicio: str = "spotify") -> str:
+    """Dirección a la que Spotify o Google regresan después de iniciar sesión (debe estar registrada)."""
+    fija = config.spotify_redirect_uri if servicio == "spotify" else config.google_redirect_uri
+    if fija:
+        return fija
     protocolo = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     if host.split(":")[0] == "localhost":
         host = host.replace("localhost", "127.0.0.1", 1)  # Spotify no acepta "localhost"
-    return f"{protocolo}://{host}/spotify/callback"
+    return f"{protocolo}://{host}/{servicio}/callback"
 
 
 @app.post("/api/spotify/enlace", dependencies=[Depends(verificar_clave)])
 async def spotify_enlace(request: Request) -> dict:
     try:
-        return {"url": spotify.crear_enlace(_url_de_regreso(request)), "regreso": _url_de_regreso(request)}
+        return {"url": spotify.crear_enlace(_url_de_regreso(request, "spotify")),
+                "regreso": _url_de_regreso(request, "spotify")}
     except SpotifyError as error:
         raise HTTPException(503, str(error)) from error
 
@@ -193,6 +247,42 @@ async def spotify_callback(code: str = "", state: str = "", error: str = "") -> 
     return _pagina("Spotify conectado", cuerpo)
 
 
+@app.post("/api/google/enlace", dependencies=[Depends(verificar_clave)])
+async def google_enlace(request: Request) -> dict:
+    regreso = _url_de_regreso(request, "google")
+    try:
+        return {"url": google.crear_enlace(regreso), "regreso": regreso}
+    except GoogleError as error:
+        raise HTTPException(503, str(error)) from error
+
+
+@app.get("/google/conectar")
+async def google_conectar() -> FileResponse:
+    return FileResponse(FRONTEND / "google.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/google/callback")
+async def google_callback(code: str = "", state: str = "", error: str = "") -> HTMLResponse:
+    volver = "<a class='boton' href='/'>Volver a JARVIS</a>"
+    if error:
+        motivo = "Cancelaste el permiso." if error == "access_denied" else f"Google respondió: {error}."
+        return _pagina("No se conectó Google", f"<p>{escape(motivo)}</p>{volver}")
+    try:
+        codigo = await google.completar_conexion(code, state)
+    except GoogleError as fallo:
+        return _pagina("No se conectó Google", f"<p>{escape(str(fallo))}</p>{volver}")
+    except Exception as fallo:  # noqa: BLE001
+        log.exception("Error conectando Google")
+        return _pagina("No se conectó Google", f"<p>{escape(type(fallo).__name__)}: {escape(str(fallo)[:200])}</p>{volver}")
+    cuerpo = f"""<p>Listo: Gemini ya puede revisar tu Gmail, Google Calendar y Drive.</p>
+<p>Para que no se pierda cuando el servidor se reinicie, guarda este código como
+<b>GOOGLE_REFRESH_TOKEN</b> en Render (Environment) y en tu <b>.env</b>. Es privado, como una contraseña.</p>
+<textarea id="codigo" readonly rows="4">{escape(codigo)}</textarea>
+<button class="boton" type="button" onclick="navigator.clipboard.writeText(document.getElementById('codigo').value).then(()=>this.textContent='Copiado')">Copiar código</button>
+<a class="boton boton--suave" href="/">Volver a JARVIS</a>"""
+    return _pagina("Google conectado", cuerpo)
+
+
 @app.get("/salud")
 async def salud() -> dict:
     return {"ok": True}
@@ -203,4 +293,14 @@ async def inicio() -> FileResponse:
     return FileResponse(FRONTEND / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-app.mount("/", StaticFiles(directory=FRONTEND), name="frontend")
+class EstaticosSinCache(StaticFiles):
+    """Sirve la página pidiendo al navegador que revise si hay versión nueva cada vez (respuesta 304 si no
+    cambió, así que sigue siendo rápido). Sin esto, el celular se quedaba con JavaScript viejo tras actualizar."""
+
+    async def get_response(self, path, scope):
+        respuesta = await super().get_response(path, scope)
+        respuesta.headers["Cache-Control"] = "no-cache"
+        return respuesta
+
+
+app.mount("/", EstaticosSinCache(directory=FRONTEND), name="frontend")

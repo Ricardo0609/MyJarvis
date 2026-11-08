@@ -1,7 +1,7 @@
 import { api, clave, ErrorClave } from "./api.js";
 import { desbloquearAudio, reproducirAudio } from "./audio.js";
 import { crearOrbe } from "./orbe.js";
-import { mostrarEnPanel, ocultarPanel } from "./panel.js";
+import { guia, mostrarEnPanel, ocultarPanel } from "./panel.js";
 import { escucha, voz } from "./voz.js";
 
 const $ = (id) => document.getElementById(id);
@@ -132,8 +132,215 @@ function mostrarAviso(mensaje, ms = 4500) {
 }
 
 function cerrarPanel() {
+  if (guia.activa) {
+    turnoGuia++; // si estaba leyendo un paso, se calla
+    voz.callar();
+  }
   orbe.mostrar(false);
   setTimeout(() => { if (!document.body.classList.contains("mostrando")) ocultarPanel(); }, 550);
+}
+
+function ponerExpertos(respuesta) {
+  const director = respuesta.cerebro === "gemini" ? "Gemini" : "Claude";
+  $("conexion").textContent = (respuesta.expertos?.length ? respuesta.expertos : [director]).join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// Archivos adjuntos: se suben en cuanto los eliges y viajan con tu siguiente orden
+// ---------------------------------------------------------------------------
+
+const zonaAdjuntos = $("adjuntos");
+const entradaArchivo = $("entrada-archivo");
+let adjuntos = [];
+let contadorAdjuntos = 0;
+
+const ICONOS_ARCHIVO = { pdf: "picture_as_pdf", doc: "description", docx: "description", xls: "table_chart",
+  xlsx: "table_chart", xlsm: "table_chart", csv: "table_chart", ppt: "slideshow", pptx: "slideshow" };
+
+// Las fotos del celular pesan mucho: se reducen a 2048 px antes de subirlas (más rápido y más barato de analizar).
+async function reducirImagen(archivo) {
+  if (!archivo.type.startsWith("image/") || archivo.type === "image/gif" || archivo.size < 1.5e6) return archivo;
+  try {
+    const imagen = await createImageBitmap(archivo, { imageOrientation: "from-image" });
+    const escala = Math.min(1, 2048 / Math.max(imagen.width, imagen.height));
+    const lienzo = document.createElement("canvas");
+    lienzo.width = Math.round(imagen.width * escala);
+    lienzo.height = Math.round(imagen.height * escala);
+    lienzo.getContext("2d").drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+    const reducida = await new Promise((listo) => lienzo.toBlob(listo, "image/jpeg", 0.86));
+    if (!reducida || reducida.size >= archivo.size) return archivo;
+    return new File([reducida], archivo.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return archivo; // formato que el navegador no sabe abrir (p. ej. HEIC en Chrome): se sube tal cual
+  }
+}
+
+function dibujarAdjuntos() {
+  zonaAdjuntos.replaceChildren();
+  for (const a of adjuntos) {
+    const chip = document.createElement("div");
+    chip.className = `adjunto adjunto--${a.estado}`;
+    chip.title = a.estado === "error" ? a.error : a.nombre;
+    if (a.miniatura) {
+      const img = document.createElement("img");
+      img.src = a.miniatura;
+      img.alt = "";
+      chip.append(img);
+    } else {
+      const icono = document.createElement("span");
+      icono.className = "material-symbols-rounded";
+      icono.textContent = a.estado === "error" ? "error" : ICONOS_ARCHIVO[a.nombre.split(".").pop().toLowerCase()] || "draft";
+      chip.append(icono);
+    }
+    const nombre = document.createElement("span");
+    nombre.className = "adjunto__nombre";
+    nombre.textContent = a.estado === "subiendo" ? `Subiendo ${a.nombre}` : a.nombre;
+    const quitar = document.createElement("button");
+    quitar.type = "button";
+    quitar.className = "adjunto__quitar";
+    quitar.setAttribute("aria-label", `Quitar ${a.nombre}`);
+    quitar.innerHTML = '<span class="material-symbols-rounded">close</span>';
+    quitar.addEventListener("click", () => quitarAdjunto(a.clave));
+    chip.append(nombre, quitar);
+    zonaAdjuntos.append(chip);
+  }
+  zonaAdjuntos.hidden = !adjuntos.length;
+  document.body.classList.toggle("con-adjuntos", adjuntos.length > 0);
+  acomodarSubtitulo();
+}
+
+function quitarAdjunto(claveAdjunto) {
+  const quitado = adjuntos.find((a) => a.clave === claveAdjunto);
+  if (quitado?.miniatura) URL.revokeObjectURL(quitado.miniatura);
+  adjuntos = adjuntos.filter((a) => a.clave !== claveAdjunto);
+  dibujarAdjuntos();
+}
+
+function limpiarAdjuntos() {
+  adjuntos.forEach((a) => a.miniatura && URL.revokeObjectURL(a.miniatura));
+  adjuntos = [];
+  dibujarAdjuntos();
+}
+
+async function agregarArchivos(lista) {
+  for (const original of Array.from(lista).slice(0, 6)) {
+    const adjunto = { clave: ++contadorAdjuntos, nombre: original.name || "foto.jpg", estado: "subiendo",
+      miniatura: original.type.startsWith("image/") ? URL.createObjectURL(original) : "" };
+    adjuntos.push(adjunto);
+    adjunto.promesa = (async () => {
+      try {
+        if (original.size > 20 * 1024 * 1024 && !original.type.startsWith("image/")) {
+          throw new Error("pesa más de 20 MB");
+        }
+        const listo = await reducirImagen(original);
+        const datos = await api.subirArchivo(listo, listo.name || adjunto.nombre);
+        Object.assign(adjunto, { id: datos.id, nombre: datos.nombre, estado: "listo" });
+      } catch (error) {
+        if (error instanceof ErrorClave) pedirClave();
+        Object.assign(adjunto, { estado: "error", error: error.message });
+        mostrarAviso(`No se pudo subir ${adjunto.nombre}: ${error.message}.`, 8000);
+      }
+      dibujarAdjuntos();
+    })();
+  }
+  dibujarAdjuntos();
+  await Promise.allSettled(adjuntos.map((a) => a.promesa));
+  if (adjuntos.some((a) => a.estado === "listo") && document.body.dataset.estado === "reposo" && !ocupado) {
+    ponerEstado("reposo", "Archivo listo · dime qué hago con él");
+  }
+}
+
+$("btn-adjuntar").addEventListener("click", () => {
+  voz.desbloquear();
+  entradaArchivo.click();
+});
+entradaArchivo.addEventListener("change", () => {
+  if (entradaArchivo.files?.length) agregarArchivos(entradaArchivo.files);
+  entradaArchivo.value = "";
+});
+
+// También puedes arrastrar archivos a la ventana (PC) o pegar una captura de pantalla (Ctrl+V).
+window.addEventListener("dragover", (evento) => evento.preventDefault());
+window.addEventListener("drop", (evento) => {
+  evento.preventDefault();
+  if (evento.dataTransfer?.files?.length) agregarArchivos(evento.dataTransfer.files);
+});
+window.addEventListener("paste", (evento) => {
+  const archivos = Array.from(evento.clipboardData?.files || []);
+  if (archivos.length) {
+    evento.preventDefault();
+    agregarArchivos(archivos);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Guía paso a paso: "siguiente", "anterior", "repite", "paso 3" se resuelven aquí mismo (al instante)
+// ---------------------------------------------------------------------------
+
+let turnoGuia = 0;
+const NUMEROS = { uno: 1, primero: 1, primer: 1, dos: 2, segundo: 2, tres: 3, tercero: 3, tercer: 3, cuatro: 4,
+  cuarto: 4, cinco: 5, quinto: 5, seis: 6, sexto: 6, siete: 7, septimo: 7, ocho: 8, octavo: 8, nueve: 9, noveno: 9,
+  diez: 10, decimo: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15 };
+
+function normalizar(texto) {
+  return texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[¿?¡!.,;:"]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function comandoGuia(texto) {
+  let t = normalizar(texto);
+  for (let i = 0; i < 3; i++) t = t.replace(/^(jarvis|oye|ok|okay|bien|muy bien|va|vale|perfecto|bueno|y|ahora)\s+/, "");
+  t = t.replace(/\s+(por favor|porfa|jarvis|senor)$/, "");
+  if (/^(siguiente|sigue|continua|continuar|continuamos|continuemos|adelante|proximo|el siguiente|siguiente paso|que sigue|ya|ya esta|ya quedo|ya lo hice|listo|hecho|empezar|empieza|empecemos|comenzar|comienza|comencemos|vamos|dale)$/.test(t)) return { accion: "siguiente" };
+  if (/^(anterior|atras|regresa|regresar|paso anterior|el anterior|vuelve|volver|regresa un paso|un paso atras)$/.test(t)) return { accion: "anterior" };
+  if (/^(repite|repitelo|repetir|repite el paso|repite eso|otra vez|de nuevo|que dijiste|no te escuche|no escuche|como|mande)$/.test(t)) return { accion: "repetir" };
+  const m = t.match(/^(?:ve al |ir al |vamos al |ve a |al |pasa al )?paso (?:numero )?(\d+|[a-z]+)$/);
+  if (m) {
+    const n = Number(m[1]) || NUMEROS[m[1]];
+    if (n) return { accion: "ir", paso: n - 1 };
+  }
+  if (/^(que (necesito|ocupo)|materiales|ingredientes|que materiales|que ingredientes|lista de (materiales|ingredientes))$/.test(t)) return { accion: "materiales" };
+  if (/^(termina|terminar|terminamos|salir|sal|cerrar|cierra|quita|quitar)( de)?( la)?( guia| receta)?$/.test(t)) return { accion: "cerrar" };
+  return null;
+}
+
+async function hablarGuia(texto) {
+  const turno = ++turnoGuia;
+  voz.callar();
+  if (!texto || !vozGeminiDisponible) return;
+  ponerEstado("pensando", "Preparando la voz…");
+  let audio;
+  try {
+    audio = await api.voz(texto);
+  } catch (error) {
+    if (turno === turnoGuia) {
+      ponerEstado("reposo");
+      mostrarAviso(`No sonó la voz de Charon: ${error.message}.`, 7000);
+    }
+    return;
+  }
+  if (turno !== turnoGuia) return; // ya pidió otro paso
+  await reproducirAudio(audio, { alNivel: (n) => orbe.nivel(n), alEmpezar: () => ponerEstado("hablando") });
+  if (turno === turnoGuia) ponerEstado("reposo");
+}
+
+guia.alCambiar = async (texto, indice) => {
+  await hablarGuia(texto);
+  // Prepara el audio del siguiente paso para que al decir "siguiente" suene al instante.
+  const siguiente = guia.textoPaso(indice + 1);
+  if (siguiente && vozGeminiDisponible && guia.activa) api.voz(siguiente).catch(() => {});
+};
+
+function manejarGuia(comando) {
+  if (comando.accion === "siguiente") guia.siguiente();
+  else if (comando.accion === "anterior") guia.anterior();
+  else if (comando.accion === "repetir") guia.repetir();
+  else if (comando.accion === "ir") guia.ir(comando.paso);
+  else if (comando.accion === "materiales") hablarGuia(guia.textoMateriales());
+  else if (comando.accion === "cerrar") {
+    cerrarPanel();
+    hablarGuia("Muy bien, señor. Cerré la guía.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,30 +370,42 @@ async function decir(texto) {
 async function enviar(texto) {
   texto = texto.trim();
   if (!texto || ocupado) return;
+  if (guia.activa && !adjuntos.length) {
+    const comando = comandoGuia(texto);
+    if (comando) return manejarGuia(comando);
+  }
   ocupado = true;
   ocultarAccion();
   subtitulo(texto);
   ponerEstado("pensando");
+  if (adjuntos.some((a) => a.estado === "subiendo")) {
+    ponerEstado("pensando", "Subiendo archivo…");
+    await Promise.allSettled(adjuntos.map((a) => a.promesa));
+    ponerEstado("pensando");
+  }
+  const ids = adjuntos.filter((a) => a.estado === "listo").map((a) => a.id);
   const enLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
   const esperas = [
-    setTimeout(() => ponerEstado("pensando", enLocal ? "Sigo pensando…" : "Despertando el servidor…"), 8000),
-    setTimeout(() => ponerEstado("pensando", "Está tardando más de lo normal…"), 30000),
+    setTimeout(() => ponerEstado("pensando", ids.length ? "Revisando el archivo…" : enLocal ? "Sigo pensando…" : "Despertando el servidor…"), 8000),
+    setTimeout(() => ponerEstado("pensando", "Sigo en ello: archivos, imágenes y correos tardan un poco más…"), 30000),
   ];
   const limpiarEsperas = () => esperas.forEach(clearTimeout);
 
   try {
-    const respuesta = await api.comando(texto);
+    const respuesta = await api.comando(texto, ids);
     limpiarEsperas();
+    if (ids.length) limpiarAdjuntos(); // ya quedaron en la conversación: puedes seguir preguntando por ellos
     if (respuesta.aviso) mostrarAviso(respuesta.aviso, 9000);
-    $("conexion").textContent = respuesta.cerebro === "gemini" ? "Gemini" : "Claude";
+    ponerExpertos(respuesta);
 
     if (respuesta.abrir) mostrarAccion(respuesta.abrir);
 
     if (respuesta.mostrar) {
+      turnoGuia++;
       mostrarEnPanel(respuesta.mostrar);
       requestAnimationFrame(() => orbe.mostrar(true));
-    } else if (document.body.classList.contains("mostrando")) {
-      cerrarPanel();
+    } else if (document.body.classList.contains("mostrando") && !guia.activa) {
+      cerrarPanel(); // si estás siguiendo una guía, se queda en pantalla
     }
 
     ponerEstado("pensando", vozGeminiDisponible ? "Preparando la voz…" : "");
@@ -275,6 +494,7 @@ formTeclado.addEventListener("submit", (evento) => {
 $("btn-nueva").addEventListener("click", async () => {
   voz.callar();
   cerrarPanel();
+  limpiarAdjuntos();
   ponerEstado("reposo");
   subtitulo("");
   try {

@@ -71,6 +71,21 @@ class Config:
     spotify_refresh_token: str
     spotify_redirect_uri: str
 
+    # ChatGPT (OpenAI): archivos, imágenes y guías paso a paso
+    openai_api_key: str
+    modelo_chatgpt: str
+    modelo_imagen: str
+    calidad_imagen: str
+    limite_imagenes_dia: int
+
+    # Google (Gmail, Calendar, Drive) y YouTube: los maneja Gemini
+    google_client_id: str
+    google_client_secret: str
+    google_refresh_token: str
+    google_redirect_uri: str
+    youtube_api_key: str
+    experto_google: str  # "gemini" (resume Gemini) | "claude" (Claude lee directo; más privado)
+
     @property
     def orquestador_efectivo(self) -> str:
         """Si eliges Claude pero no hay llave, cae a Gemini (gratis) para no dejarte sin asistente."""
@@ -115,7 +130,25 @@ def cargar_config() -> Config:
         spotify_client_secret=_env("SPOTIFY_CLIENT_SECRET"),
         spotify_refresh_token=_env("SPOTIFY_REFRESH_TOKEN"),
         spotify_redirect_uri=_env("SPOTIFY_REDIRECT_URI"),  # opcional: se calcula solo
+        openai_api_key=_env("OPENAI_API_KEY"),
+        modelo_chatgpt=_env("MODELO_CHATGPT", "gpt-6-luna"),
+        modelo_imagen=_env("MODELO_IMAGEN", "gpt-image-2.5-flare"),
+        calidad_imagen=_env("CALIDAD_IMAGEN", "medium").lower(),
+        limite_imagenes_dia=_entero(_env("LIMITE_IMAGENES_DIA", "15"), 15),
+        google_client_id=_env("GOOGLE_CLIENT_ID"),
+        google_client_secret=_env("GOOGLE_CLIENT_SECRET"),
+        google_refresh_token=_env("GOOGLE_REFRESH_TOKEN"),
+        google_redirect_uri=_env("GOOGLE_REDIRECT_URI"),  # opcional: se calcula solo
+        youtube_api_key=_env("YOUTUBE_API_KEY"),
+        experto_google=_env("EXPERTO_GOOGLE", "gemini").lower(),
     )
+
+
+def _entero(valor: str, defecto: int) -> int:
+    try:
+        return int(valor)
+    except ValueError:
+        return defecto
 
 
 config = cargar_config()

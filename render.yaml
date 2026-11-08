@@ -18,6 +18,8 @@ services:
         value: claude
       - key: INVESTIGACION_MODO
         value: gratis
+      - key: EXPERTO_GOOGLE
+        value: gemini
       - key: NOTION_VERSION
         value: 2026-03-11
       - key: NOTION_OBJETIVOS_PAGE_ID
@@ -35,4 +37,20 @@ services:
       - key: NOTION_TOKEN
         sync: false
       - key: NOTION_NOTAS_PADRE_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REFRESH_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: YOUTUBE_API_KEY
         sync: false

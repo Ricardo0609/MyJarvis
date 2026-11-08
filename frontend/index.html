@@ -30,7 +30,10 @@
         <span class="marca__estado"><span class="punto" aria-hidden="true"></span><span id="estado-corto">En reposo</span></span>
       </div>
       <div class="barra__derecha">
-        <span class="conexion" id="conexion" aria-live="polite"></span>
+        <span class="conexion" id="conexion" aria-live="polite" title="Quién resolvió tu última orden"></span>
+        <button class="icono icono--suave icono--chico" id="btn-nueva" type="button" aria-label="Empezar conversación nueva" title="Conversación nueva">
+          <span class="material-symbols-rounded">refresh</span>
+        </button>
       </div>
     </header>
 
@@ -49,27 +52,34 @@
       <span id="accion-texto"></span>
     </a>
 
+    <!-- Archivos adjuntos (PDF, Word, Excel, fotos): se mandan con tu siguiente orden -->
+    <div class="adjuntos" id="adjuntos" hidden></div>
+
     <!-- Panel: aparece cuando pides ver algo -->
     <section class="panel" id="panel" aria-live="polite" hidden>
       <div class="panel__cabecera">
         <h1 class="panel__titulo" id="panel-titulo"></h1>
+        <div class="panel__acciones" id="panel-acciones"></div>
         <button class="icono" id="panel-cerrar" type="button" aria-label="Cerrar panel">
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>
       <div class="panel__cuerpo" id="panel-cuerpo"></div>
+      <div class="panel__pie" id="panel-pie" hidden></div>
     </section>
 
     <footer class="controles">
-      <button class="icono icono--suave" id="btn-teclado" type="button" aria-label="Escribir en lugar de hablar">
-        <span class="material-symbols-rounded">keyboard</span>
+      <button class="icono icono--suave" id="btn-adjuntar" type="button" aria-label="Adjuntar archivo o foto" title="Adjuntar archivo o foto">
+        <span class="material-symbols-rounded">attach_file</span>
       </button>
       <button class="microfono" id="btn-microfono" type="button" aria-label="Hablar">
         <span class="material-symbols-rounded">mic</span>
       </button>
-      <button class="icono icono--suave" id="btn-nueva" type="button" aria-label="Empezar conversación nueva">
-        <span class="material-symbols-rounded">refresh</span>
+      <button class="icono icono--suave" id="btn-teclado" type="button" aria-label="Escribir en lugar de hablar" title="Escribir">
+        <span class="material-symbols-rounded">keyboard</span>
       </button>
+      <input id="entrada-archivo" type="file" multiple hidden
+             accept="image/*,.pdf,.docx,.doc,.xlsx,.xlsm,.xls,.pptx,.ppt,.csv,.txt,.md,.json">
 
       <form class="teclado" id="form-teclado" hidden>
         <input id="entrada-texto" type="text" autocomplete="off" placeholder="Escribe tu orden" aria-label="Orden escrita" maxlength="2000">

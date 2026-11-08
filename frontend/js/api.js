@@ -77,10 +77,40 @@ async function pedirAudio(texto) {
   }
 }
 
+// Sube un archivo tal cual (sin formularios); el servidor responde con su id.
+async function subirArchivo(archivo, nombre = archivo.name) {
+  const control = new AbortController();
+  const temporizador = setTimeout(() => control.abort(), 180000);
+  try {
+    const respuesta = await fetch("/api/archivo", {
+      method: "POST",
+      headers: {
+        "X-Clave": claveEnMemoria,
+        "X-Nombre": encodeURIComponent(nombre || "archivo"),
+        "Content-Type": archivo.type || "application/octet-stream",
+      },
+      body: archivo,
+      signal: control.signal,
+    });
+    if (respuesta.status === 401) throw new ErrorClave("Clave incorrecta");
+    const datos = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok) throw new ErrorServidor(datos.detail || `Error ${respuesta.status} al subir el archivo`);
+    return datos;
+  } catch (error) {
+    if (error.name === "AbortError") throw new ErrorServidor("El archivo tardó demasiado en subir");
+    if (error instanceof TypeError) throw new ErrorServidor("Sin conexión con el servidor");
+    throw error;
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
 export const api = {
   voz: pedirAudio,
+  subirArchivo,
   estado: () => pedir("/api/estado", { tiempoMax: 70000 }),
-  comando: (texto) => pedir("/api/comando", { metodo: "POST", cuerpo: { texto, sesion: sesionId() } }),
+  comando: (texto, archivos = []) => pedir("/api/comando", {
+    metodo: "POST", cuerpo: { texto, sesion: sesionId(), archivos }, tiempoMax: 150000 }),
   olvidar: () => pedir("/api/olvidar", { metodo: "POST", cuerpo: { sesion: sesionId() } }),
   spotifyReintentar: () => pedir("/api/spotify/reintentar", { metodo: "POST", tiempoMax: 15000 }),
 };

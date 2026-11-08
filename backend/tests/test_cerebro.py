@@ -120,7 +120,7 @@ def test_gemini_con_function_calling(monkeypatch):
 
 
 def test_api_pide_clave_y_responde(monkeypatch):
-    async def procesar_falso(texto, historial):
+    async def procesar_falso(texto, historial, *_):
         return {"voz": f"Eco: {texto} ({len(historial)})", "mostrar": None, "herramientas": [], "cerebro": "claude"}
 
     import app.main as main
@@ -147,11 +147,11 @@ def test_solo_ofrece_herramientas_configuradas(monkeypatch):
     assert nombres == ["responder"]
 
     monkeypatch.setattr(tools, "config", dataclasses.replace(tools.config, gemini_api_key="g"))
-    assert [h["name"] for h in tools.herramientas_claude()] == ["investigar", "responder"]
+    assert [h["name"] for h in tools.herramientas_claude()] == ["investigar", "analizar_archivo", "guiar", "responder"]
 
 
 def test_error_interno_no_deja_la_pagina_esperando(monkeypatch):
-    async def procesar_roto(texto, historial):
+    async def procesar_roto(texto, historial, *_):
         raise ValueError("algo raro")
 
     import app.main as main
@@ -252,3 +252,12 @@ def test_voz_todas_lentas_da_error_claro(monkeypatch):
     voz._cache.clear()
     with pytest.raises(TimeoutError, match="tardó más de"):
         asyncio.run(voz.sintetizar("Otra frase"))
+
+
+def test_archivos_de_la_pagina_siempre_se_revalidan():
+    with TestClient(app) as cliente:
+        for ruta in ("/", "/js/app.js", "/css/styles.css", "/spotify/conectar"):
+            r = cliente.get(ruta)
+            assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", ruta
+        etag = cliente.get("/js/app.js").headers["etag"]
+        assert cliente.get("/js/app.js", headers={"If-None-Match": etag}).status_code == 304

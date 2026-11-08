@@ -80,20 +80,25 @@ async def generar_gemini(modelo: str, contenidos: Any, **ajustes: Any):
 
 
 INSTRUCCIONES = (
-    "Eres el analista de investigación de un asistente personal por voz. Responde en español de México, "
+    "Eres el analista de investigación y el experto en preguntas de un asistente personal por voz. Responde en español de México, "
     "con datos concretos y actuales. Empieza con una respuesta directa de 1-2 frases y luego los puntos clave "
     "en viñetas cortas. Si las fuentes no alcanzan para responder con seguridad, dilo. No inventes datos."
 )
 
 
-async def buscar_tavily(pregunta: str, max_resultados: int = 5) -> list[dict[str, Any]]:
-    async with httpx.AsyncClient(timeout=20.0) as http:
-        respuesta = await http.post(
-            "https://api.tavily.com/search",
-            headers={"Authorization": f"Bearer {config.tavily_api_key}"},
-            json={"query": pregunta, "search_depth": "basic", "max_results": max_resultados,
-                  "include_answer": False},
-        )
+async def buscar_tavily(pregunta: str, max_resultados: int = 5, profundidad: str = "basic",
+                        **extra: Any) -> list[dict[str, Any]]:
+    """Busca en la web con Tavily. 'extra' son opciones como country o include_domains; si Tavily no las
+    acepta (error 400), se repite la búsqueda sin ellas."""
+    cuerpo = {"query": pregunta, "search_depth": profundidad, "max_results": max_resultados, "include_answer": False}
+    async with httpx.AsyncClient(timeout=25.0) as http:
+        respuesta = await http.post("https://api.tavily.com/search",
+                                    headers={"Authorization": f"Bearer {config.tavily_api_key}"},
+                                    json={**cuerpo, **extra})
+        if respuesta.status_code == 400 and extra:
+            log.warning("Tavily rechazó las opciones %s; busco sin ellas", list(extra))
+            respuesta = await http.post("https://api.tavily.com/search",
+                                        headers={"Authorization": f"Bearer {config.tavily_api_key}"}, json=cuerpo)
         respuesta.raise_for_status()
         datos = respuesta.json()
     return [{"titulo": r.get("title", ""), "url": r.get("url", ""), "contenido": (r.get("content") or "")[:1500]}
@@ -116,7 +121,18 @@ async def _resumir_con_gemini(prompt: str, con_google: bool = False) -> tuple[st
     return (respuesta.text or "").strip(), fuentes[:6]
 
 
-async def investigar(pregunta: str) -> dict[str, Any]:
+def _con_pantalla(resultado: dict[str, Any], pregunta: str) -> dict[str, Any]:
+    """Prepara el texto para el panel: el director solo decide si mostrarlo (no tiene que copiarlo)."""
+    resultado["_experto"] = "Gemini"
+    if resultado.get("resumen"):
+        panel = {"tipo": "texto", "titulo": pregunta[:90], "contenido": resultado["resumen"]}
+        if resultado.get("fuentes"):
+            panel["fuentes"] = resultado["fuentes"]
+        resultado["_mostrar_opcional"] = panel
+    return resultado
+
+
+async def investigar(pregunta: str, necesita_web: bool = True) -> dict[str, Any]:
     if not config.gemini_api_key:
         if config.tavily_api_key:
             resultados = await buscar_tavily(pregunta)
@@ -124,9 +140,15 @@ async def investigar(pregunta: str) -> dict[str, Any]:
                     "nota": "Falta GEMINI_API_KEY: resume tú estos resultados."}
         return {"error": "No hay GEMINI_API_KEY ni TAVILY_API_KEY configuradas para investigar."}
 
+    if not necesita_web:
+        # Preguntas de conocimiento general: Gemini contesta directo (más rápido y sin gastar búsquedas).
+        resumen, _ = await _resumir_con_gemini(pregunta)
+        return _con_pantalla({"con_web": False, "resumen": resumen, "fuentes": [], "motor": "gemini"}, pregunta)
+
     if config.investigacion_modo == "google":
         resumen, fuentes = await _resumir_con_gemini(pregunta, con_google=True)
-        return {"con_web": True, "resumen": resumen, "fuentes": fuentes, "motor": "gemini + google"}
+        return _con_pantalla({"con_web": True, "resumen": resumen, "fuentes": fuentes, "motor": "gemini + google"},
+                             pregunta)
 
     if config.tavily_api_key:
         resultados = await buscar_tavily(pregunta)
@@ -135,11 +157,11 @@ async def investigar(pregunta: str) -> dict[str, Any]:
         prompt = (f"Pregunta: {pregunta}\n\nResultados de búsqueda web de hoy:\n{contexto}\n\n"
                   "Responde usando solo estos resultados y cita los números [n] que uses.")
         resumen, _ = await _resumir_con_gemini(prompt)
-        return {"con_web": True, "resumen": resumen,
-                "fuentes": [{"titulo": r["titulo"], "url": r["url"]} for r in resultados],
-                "motor": "gemini + tavily"}
+        return _con_pantalla({"con_web": True, "resumen": resumen,
+                              "fuentes": [{"titulo": r["titulo"], "url": r["url"]} for r in resultados],
+                              "motor": "gemini + tavily"}, pregunta)
 
     resumen, _ = await _resumir_con_gemini(
         f"{pregunta}\n\n(No tienes acceso a internet: responde con tu conocimiento y aclara si podría estar desactualizado.)")
-    return {"con_web": False, "resumen": resumen, "fuentes": [], "motor": "gemini (sin web)",
-            "nota": "Sin búsqueda web: configura TAVILY_API_KEY para datos actuales."}
+    return _con_pantalla({"con_web": False, "resumen": resumen, "fuentes": [], "motor": "gemini (sin web)",
+                          "nota": "Sin búsqueda web: configura TAVILY_API_KEY para datos actuales."}, pregunta)

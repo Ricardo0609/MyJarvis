@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Conectar Google · JARVIS</title>
+  <link rel="stylesheet" href="/css/spotify.css">
+</head>
+<body>
+  <main class="tarjeta">
+    <h1>Conectar Google</h1>
+    <p id="mensaje">Abriendo Google para que le des permiso a JARVIS (Gmail, Calendar y Drive)…</p>
+    <a class="boton boton--suave" href="/">Volver a JARVIS</a>
+  </main>
+  <script>
+    (async () => {
+      const mensaje = document.getElementById("mensaje");
+      let clave = "";
+      try { clave = localStorage.getItem("jarvis.clave") || ""; } catch { /* modo privado */ }
+      try {
+        const respuesta = await fetch("/api/google/enlace", { method: "POST", headers: { "X-Clave": clave } });
+        const datos = await respuesta.json().catch(() => ({}));
+        if (respuesta.status === 401) {
+          mensaje.textContent = "Primero abre JARVIS en este navegador y escribe tu clave; luego vuelve a tocar «Conectar Google».";
+        } else if (!respuesta.ok) {
+          mensaje.textContent = datos.detail || "No se pudo preparar la conexión con Google.";
+        } else {
+          location.href = datos.url;
+          return;
+        }
+      } catch {
+        mensaje.textContent = "No hay conexión con el servidor de JARVIS.";
+      }
+      mensaje.classList.add("error");
+    })();
+  </script>
+</body>
+</html>

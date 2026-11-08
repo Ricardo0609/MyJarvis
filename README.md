@@ -1,21 +1,32 @@
 # JARVIS — asistente personal por voz
 
-Entras, ves el orbe, tocas el botón, hablas. JARVIS decide solo qué hacer:
+Entras, ves el orbe, tocas el botón, hablas. JARVIS (el director, Claude) decide solo a quién darle cada cosa:
 
-- **Investigar algo actual** → Gemini (busca en la web y resume).
-- **Pendientes, calendario, páginas de Notion, crear cosas** → Claude.
-- Contesta **con voz**. Si pides *ver* algo, el orbe sube, se encoge y aparece el panel.
+| IA | Se encarga de |
+|---|---|
+| **Claude** | Notion (pendientes, calendario, páginas), música (Spotify), **redactar** (correos, reportes, mensajes) y todo lo demás |
+| **Gemini** | **Investigar y responder tus preguntas**, tu **Gmail, Google Calendar y Drive**, **buscar productos** con precios (de mayor a menor) y **videos** de YouTube |
+| **ChatGPT** | **Analizar archivos** (PDF, Word, Excel, PowerPoint, fotos), **crear imágenes** y **guiarte paso a paso** (recetas, electrónica, armar algo) |
+
+Contesta **con voz**. Si pides *ver* algo, el orbe sube, se encoge y aparece el panel. Arriba a la derecha ves quién trabajó (ej. `CLAUDE · GEMINI`).
 
 ```
 jarvis/
 ├── backend/                 Servidor en Python (FastAPI)
 │   ├── app/
-│   │   ├── main.py          Rutas /api/comando, /api/estado y sirve la página
+│   │   ├── main.py          Rutas /api/comando, /api/estado, /api/archivo y sirve la página
 │   │   ├── cerebro.py       El director: Claude (o Gemini gratis) + uso de herramientas
-│   │   ├── tools.py         Las "manos": herramientas de Notion e investigación
+│   │   ├── tools.py         Las "manos": todas las herramientas y a qué experto van
 │   │   ├── notion.py        Objetivos (encabezados + checkboxes), calendario y páginas
-│   │   ├── research.py      Investigación: Gemini + Tavily (gratis) o Gemini + Google
-│   │   ├── prompts.py       Personalidad e instrucciones de JARVIS
+│   │   ├── spotify.py       Música
+│   │   ├── research.py      Gemini: investigación (Tavily gratis o Google) y preguntas
+│   │   ├── cuenta_google.py Gemini: Gmail, Google Calendar y Drive
+│   │   ├── compras.py       Gemini: productos con precio y tienda
+│   │   ├── videos.py        Videos de YouTube
+│   │   ├── chatgpt.py       ChatGPT: archivos, imágenes y guías paso a paso
+│   │   ├── archivos.py      Archivos que adjuntas e imágenes creadas (en memoria, 3 horas)
+│   │   ├── voz.py           Voz de Charon (Gemini)
+│   │   ├── prompts.py       Personalidad e instrucciones de JARVIS (reparto de trabajo)
 │   │   ├── sesiones.py      Memoria corta de la conversación
 │   │   └── config.py        Lee las variables de entorno
 │   ├── tests/               Pruebas automáticas (pytest)
@@ -35,9 +46,12 @@ jarvis/
 | Pieza | Opción por defecto | Costo |
 |---|---|---|
 | Escuchar tu voz | Reconocimiento del navegador | Gratis |
-| Hablar | Voz del navegador | Gratis |
-| Investigar en la web | Tavily (1,000 búsquedas/mes) + Gemini plan gratis | Gratis |
-| Cerebro (tareas, Notion, decidir) | **Claude Haiku 5.5** | **De pago**: ~1–2 USD/mes con uso diario. Compra mínima de créditos: 5 USD (duran hasta 1 año) |
+| Hablar | Voz **Charon** de Gemini | Gratis |
+| Investigar, preguntas y compras | Tavily (1,000 créditos/mes) + Gemini plan gratis | Gratis |
+| Cerebro (tareas, Notion, redactar, decidir) | **Claude Haiku 5.5** | **De pago**: ~1–2 USD/mes con uso diario. Compra mínima de créditos: 5 USD (duran hasta 1 año) |
+| Archivos, imágenes y guías | **ChatGPT** (`gpt-6-luna` + `gpt-image-2.5-flare`) | **De pago**: analizar y guiar cuesta fracciones de centavo; cada imagen ~1–2 centavos de dólar. Compra mínima: 5 USD (duran 1 año). Sin llave, Gemini analiza y guía gratis |
+| Gmail, Calendar, Drive | APIs de Google | Gratis |
+| Videos | YouTube Data API (100 búsquedas/día) | Gratis |
 | Notion | API de Notion | Gratis |
 | Servidor | Render plan free | Gratis (se duerme tras 15 min sin uso) |
 
@@ -66,6 +80,9 @@ Opcional de pago: `INVESTIGACION_MODO=google` hace que Gemini busque directo en 
 1. Entra a https://platform.claude.com → **Billing → Buy credits** (mínimo 5 USD).
    Recomendado: deja **apagada** la recarga automática y pon un límite de gasto mensual.
 2. **API keys → Create key** → pégala en `ANTHROPIC_API_KEY`.
+
+### ChatGPT y Google
+Tienen su propia sección más abajo: **8. ChatGPT** y **9. Google y YouTube**.
 
 ### Notion
 1. Ve a https://www.notion.so/profile/integrations → **New integration** (tipo *Internal*), nómbrala "JARVIS".
@@ -137,11 +154,27 @@ Alternativa: **New → Blueprint** usa `render.yaml` con esta misma configuraci�
 | "Resume mi página de Hábitos atómicos y guárdalo en una página nueva" | Lee, resume y crea la página en *JARVIS* |
 | "¿Cuándo sale el próximo juego de…?" / "¿Cómo está el dólar hoy?" | Investiga con Gemini y te responde |
 | "Investiga los mejores audífonos de 1,500 pesos y guárdalo en Notion" | Investiga **y** guarda (combina expertos) |
+| "¿Cómo funciona un transistor?" | Gemini responde (sin gastar búsquedas web si no hace falta) |
+| "Búscame un pantalón cargo negro talla 32" | Gemini busca en tiendas y te muestra opciones con precio y enlace, **de mayor a menor precio** |
+| "Muéstrame videos de cómo soldar componentes" | Lista de videos de YouTube con miniatura; tócalo para abrirlo |
+| "¿Tengo correos importantes hoy?" / "¿Qué dice el último correo de mi jefe?" | Gemini revisa tu Gmail y te resume (sección 9) |
+| "¿Qué tengo mañana en Google Calendar?" / "Busca en mi Drive la tesis" | Gemini revisa tu Google Calendar o Drive |
+| "Escríbele un correo a mi profesor diciendo que entrego el viernes" | Claude lo redacta en pantalla (botón **Copiar**) y, si quieres, lo deja en **Borradores** de Gmail |
+| 📎 adjuntas un PDF/Excel/Word/foto + "¿cuánto suma esta factura?" | ChatGPT lo lee y te responde; puedes seguir preguntando por el mismo archivo |
+| 📎 foto de una pieza + "¿qué componente es este?" | ChatGPT analiza la foto |
+| "Créame una imagen de un robot naranja para fondo de celular" | ChatGPT la crea; aparece con botón **Descargar** |
+| "Guíame para hacer hot cakes" / "Guíame para conectar un sensor al Arduino" | Guía paso a paso: tú dices **"siguiente"**, **"anterior"**, **"repite"**, **"paso 3"**, **"¿qué necesito?"** o **"terminar guía"** |
 | "Pon mi playlist de Metallica" | La busca en tu Spotify y la reproduce (ver sección 7) |
 
-Por seguridad **no puede borrar nada** (no tiene esa herramienta).
+Por seguridad **no puede borrar nada** y **nunca envía correos** (solo deja borradores).
 
-Botones: ⌨ escribir en vez de hablar · 🎤 hablar (tócalo mientras habla para interrumpirlo) · ↻ conversación nueva.
+Botones: 📎 adjuntar archivo o foto · 🎤 hablar (tócalo mientras habla para interrumpirlo) · ⌨ escribir · ↻ conversación nueva (arriba a la derecha).
+En la PC también puedes **arrastrar** un archivo a la ventana o **pegar** una captura con Ctrl+V.
+
+**Guías:** cada paso se lee en voz alta y el siguiente ya viene preparado, así que "siguiente" suena casi al instante.
+Si a media guía preguntas algo ("¿puedo usar mantequilla?"), JARVIS te contesta y la guía sigue en pantalla.
+
+**Archivos:** se guardan en la memoria del servidor por 3 horas (o hasta que Render se duerma). Las imágenes creadas descárgalas con el botón. Máximo 20 MB por archivo; las fotos del celular se reducen solas antes de subir.
 
 ---
 
@@ -185,7 +218,64 @@ JARVIS busca tu playlist por su nombre y la reproduce en el dispositivo donde te
 - *"INVALID_CLIENT: Invalid redirect URI"* al conectar → la dirección de Render en el paso 2 no coincide exacta.
 - *"La conexión con Spotify expiró"* → vuelve a tocar **Conectar Spotify** y actualiza `SPOTIFY_REFRESH_TOKEN`.
 
-## 8. Pruebas
+## 8. ChatGPT (archivos, imágenes y guías)
+
+Sin llave de OpenAI **todo funciona menos crear imágenes**: Gemini analiza los archivos y arma las guías gratis.
+Cuando pongas la llave, ChatGPT toma esas tareas (y si un día falla o se acaba el saldo, Gemini lo cubre solo).
+
+1. Entra a https://platform.openai.com → **Settings → Billing → Add payment method** y compra créditos
+   (mínimo **5 USD**; duran 1 año). Deja **apagada** la recarga automática (*auto recharge*).
+   Tu suscripción de ChatGPT Plus **no** sirve para la API: son cuentas de cobro separadas.
+2. **API keys → Create new secret key** → pégala como `OPENAI_API_KEY` en tu `.env` y en Render (Environment).
+3. Si al crear una imagen dice que falta **verificar tu organización**: Settings → **Organization → General → Verify Organization**
+   (es una verificación de identidad; tarda unos minutos).
+
+Cuánto gasta, más o menos: analizar un PDF de 10 páginas o armar una guía, **menos de 1 centavo de dólar**;
+cada imagen en calidad media, **~1–2 centavos**. Para cuidar tu saldo hay un tope de `LIMITE_IMAGENES_DIA=15` imágenes por día.
+`CALIDAD_IMAGEN` puede ser `low` (más barata), `medium` o `high` (más cara).
+
+## 9. Google (Gmail, Calendar, Drive) y YouTube
+
+Todo es **gratis**. Se configura una vez (≈15 minutos) en Google Cloud con tu cuenta de Gmail.
+
+1. Entra a https://console.cloud.google.com → arriba, **Seleccionar proyecto → Proyecto nuevo** → nombre `JARVIS` → **Crear**.
+2. **APIs y servicios → Biblioteca**: busca y presiona **Habilitar** en cada una:
+   **Gmail API**, **Google Calendar API**, **Google Drive API** y **YouTube Data API v3**.
+3. **Google Auth Platform** (en el menú; antes se llamaba *Pantalla de consentimiento de OAuth*) → **Comenzar**:
+   - Nombre de la app `JARVIS`, tu correo de asistencia → **Público: Externo** → tu correo de contacto → acepta → **Crear**.
+4. **Público (Audience)** → **Publicar app** → confirma. Debe decir **En producción**.
+   *Importante:* si la dejas en "Prueba", Google desconecta a JARVIS cada 7 días.
+   No hace falta mandarla a verificación: es solo para ti.
+5. **Clientes → Crear cliente** → tipo **Aplicación web** → nombre `JARVIS` → en **URI de redireccionamiento autorizados** agrega:
+   - `https://TU-APP.onrender.com/google/callback` (tu dirección real de Render)
+   - `http://127.0.0.1:8000/google/callback`
+   → **Crear**. Copia el **ID de cliente** y el **Secreto del cliente** como `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`
+   (en tu `.env` y en Render).
+6. **APIs y servicios → Credenciales → Crear credenciales → Clave de API**. Edítala → *Restricciones de API* →
+   **YouTube Data API v3** → Guardar. Pégala como `YOUTUBE_API_KEY`.
+7. Abre JARVIS y pregúntale *"¿tengo correos nuevos?"*. Aparece el botón **Conectar Google** (o abre `/google/conectar`):
+   - Elige tu cuenta. Saldrá **"Google no verificó esta app"** → **Configuración avanzada → Ir a JARVIS (no seguro)**.
+     Es normal: la app es tuya y nadie más la usa.
+   - **Marca todas las casillas** de permisos → **Continuar**.
+8. Copia el código que aparece y guárdalo como `GOOGLE_REFRESH_TOKEN` en Render y en tu `.env`.
+
+Permisos que pide: leer tus correos y **crear borradores** (nunca envía nada), ver y crear eventos de Calendar,
+y **solo leer** Drive. Puedes quitarle el acceso cuando quieras en https://myaccount.google.com/permissions.
+
+**Calendario:** si dices "calendario" o "agenda" a secas usa tu calendario de **Notion**; si dices "Google Calendar", el de Google.
+
+**Privacidad (importante):** con el plan **gratis** de Gemini, Google puede usar lo que le envías para mejorar sus productos
+y personas de Google pueden revisarlo; sus propios términos piden no mandar información personal o confidencial.
+Tus correos son justo eso. Tienes dos opciones:
+- `EXPERTO_GOOGLE=claude` → Claude lee tu Gmail, Calendar y Drive directamente y Gemini ya no recibe tus correos
+  (solo la frase corta que JARVIS dice en voz alta). Anthropic no usa lo que mandas por la API para entrenar.
+  Cuesta unos centavos de tus créditos de Claude.
+- Dejar `EXPERTO_GOOGLE=gemini` (como lo pediste) y **activar facturación** en tu proyecto de Google AI Studio:
+  con eso Google ya no usa tus datos, pero la voz y la investigación también empiezan a cobrarse (poco, pero ya no es $0).
+
+**Videos sin `YOUTUBE_API_KEY`:** también funciona (busca con Tavily dentro de YouTube), pero sin duración ni canal.
+
+## 10. Pruebas
 
 ```bash
 cd backend
@@ -193,11 +283,13 @@ pip install pytest
 python -m pytest -q
 ```
 
-Prueban, sin conectarse a internet: cómo se leen las secciones de tu página de Objetivos, dónde se insertan las tareas nuevas, el ciclo de herramientas de Claude y de Gemini, el respaldo cuando Claude falla y la clave de acceso.
+Prueban, sin conectarse a internet: cómo se leen las secciones de tu página de Objetivos, dónde se insertan las tareas nuevas, el ciclo de herramientas de Claude y de Gemini, el respaldo cuando Claude falla, la clave de acceso, el reparto a cada experto, la lectura de Word/Excel, el orden de precios, los videos, Gmail, subir y ver archivos de forma segura y el panel de guías.
+
+Para revisar las llaves reales: `python diagnostico.py` (desde la carpeta `backend`).
 
 ---
 
-## 9. Problemas comunes
+## 11. Problemas comunes
 
 | Síntoma | Solución |
 |---|---|
@@ -206,4 +298,10 @@ Prueban, sin conectarse a internet: cómo se leen las secciones de tu página de
 | No habla en el iPhone | Toca el micrófono una vez (iOS exige un toque antes de reproducir voz) y quita el modo silencio. |
 | "Claude no respondió: se acabaron los créditos" | Recarga créditos o cambia a `ORQUESTADOR=gemini`. |
 | La investigación dice "sin búsqueda web" | Falta `TAVILY_API_KEY`. |
+| "Para crear imágenes falta la llave de ChatGPT" | Pon `OPENAI_API_KEY` (sección 8). |
+| "Se acabó el saldo de OpenAI" | Recarga en platform.openai.com → Billing. Mientras, Gemini analiza archivos y arma guías. |
+| "Activa la Gmail API en Google Cloud" (o Calendar/Drive/YouTube) | Paso 2 de la sección 9. |
+| "El permiso de Google expiró" | Revisa que la app esté **En producción** (paso 4) y vuelve a conectar Google. |
+| `Error 400: redirect_uri_mismatch` al conectar Google | La dirección del paso 5 no coincide exacta con la de tu app en Render. |
+| "Ese archivo ya expiró" | Los archivos duran 3 horas o hasta que Render se duerme: vuelve a adjuntarlo. |
 | La voz suena robótica | Normal con la voz del navegador; después elegimos una voz que te guste. |
